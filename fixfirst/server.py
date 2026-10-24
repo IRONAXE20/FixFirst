@@ -63,9 +63,24 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     brains: dict[str, Brain] = {}
     bot_tasks: set[asyncio.Task] = set()
 
+    shared_llm = make_brain_llm(settings)   # stateless and safe to share: one connection pool for every call
+
     def default_llm() -> ChatModel | None:
         # Claude or Sarvam per settings; with neither key, the offline keyword brain (typed calls only).
-        return make_brain_llm(settings) or KeywordLLM()
+        return shared_llm or KeywordLLM()
+
+    async def warm_up() -> None:
+        """A fresh process answered its first turn in 14 s (SDK import, first TLS to the model and to Supabase).
+        Pay that at boot instead: Bolna's "initiated" webhook wakes a sleeping server ~40 s before the caller speaks."""
+        started = asyncio.get_running_loop().time()
+        try:
+            with engine.connect() as c:
+                c.execute(select(1))
+            if shared_llm is not None and llm_factory is None:
+                await shared_llm.complete([{"role": "user", "content": "Reply with the word ok."}], [])
+            logger.info(f"Warm-up done in {int((asyncio.get_running_loop().time() - started) * 1000)} ms")
+        except Exception as e:   # never block startup on it
+            logger.warning(f"Warm-up failed: {type(e).__name__}: {e}")
 
     make_llm = llm_factory or default_llm
 
@@ -103,12 +118,14 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
         loop_task = asyncio.create_task(followup_loop())
+        warm_task = asyncio.create_task(warm_up())
         if not settings.brain_provider:
             logger.warning("No ANTHROPIC_API_KEY or SARVAM_API_KEY: pages work and Type mode runs the offline demo brain.")
         elif not settings.sarvam_ready:
             logger.info(f"Brain: {settings.brain_provider}. Browser voice needs SARVAM_API_KEY; Bolna phone calls don't.")
         yield
         loop_task.cancel()
+        warm_task.cancel()
         for t in list(bot_tasks):
             t.cancel()
 

@@ -125,25 +125,34 @@ class BolnaBridge:
             if session:
                 self._mark_unheard(self.brain_for(session), call.presented_before_last)
 
-    def _claim_pending(self) -> tuple[str | None, list[str]]:
+    def _claim_pending(self) -> tuple[str | None, list[str], asyncio.Task | None]:
         """The most recent execution a webhook announced that no conversation has claimed yet."""
         now = time.monotonic()
         for eid in [e for e, p in self.pending.items() if now - p["at"] > PENDING_SECONDS]:
             self.pending.pop(eid, None)
         if not self.pending:
-            return None, []
+            return None, [], None
         eid = max(self.pending, key=lambda e: self.pending[e]["at"])
-        return eid, self.pending.pop(eid)["phones"]
+        entry = self.pending.pop(eid)
+        return eid, entry["phones"], entry.get("lookup")
+
+    async def _lookup(self, phones: list[str]) -> tuple[str | None, str | None]:
+        """(customer id, the number it matched) for the first of `phones` RentBasket knows, looked up in parallel."""
+        unique = list(dict.fromkeys(p for p in phones if mobile10(p)))
+        ids = await asyncio.gather(*(self.sync_customer(p) for p in unique), return_exceptions=True)
+        for phone, cid in zip(unique, ids):   # inbound: the caller is `from`; outbound: `to` / customer_phone
+            if isinstance(cid, str) and cid:
+                return cid, phone
+        return None, unique[0] if unique else None
 
     async def _open(self, key: str, cv: dict, convo: list[dict]) -> BolnaCall:
-        execution_id, hook_phones = (cv.get("call_ref"), []) if cv.get("call_ref") else self._claim_pending()
+        execution_id, hook_phones, prefetched = ((cv.get("call_ref"), [], None) if cv.get("call_ref")
+                                                 else self._claim_pending())
         phones = [p for p in (cv.get("customer_phone"), cv.get("from"), cv.get("to"), *hook_phones) if mobile10(p)]
-        customer_id, caller = None, phones[0] if phones else None
-        for phone in phones:   # inbound: the caller is `from`; outbound: `to` (or customer_phone we passed)
-            customer_id = await self.sync_customer(phone)
-            if customer_id:
-                caller = phone
-                break
+        if prefetched and not cv.get("customer_phone"):
+            customer_id, caller = await prefetched   # started when Bolna's webhook announced the call
+        else:
+            customer_id, caller = await self._lookup(phones)
         session = self.store.create(channel="phone" if phones else "web", customer_id=customer_id, caller_phone=caller)
         brain = self.brain_for(session)
         welcome = _text(convo[0].get("content")) if convo and convo[0].get("role") == "assistant" else ""
@@ -204,6 +213,9 @@ class BolnaBridge:
             if status not in FINAL_STATUSES:   # announced before its first turn: remember it for _open
                 entry = self.pending.setdefault(execution_id, {"at": time.monotonic(), "phones": []})
                 entry["phones"] = webhook_phones(payload) or entry["phones"]
+                if entry["phones"] and "lookup" not in entry:
+                    # The first turn comes ~40 s later; look the caller up now so it isn't waiting on this.
+                    entry["lookup"] = asyncio.create_task(self._lookup(entry["phones"]))
             else:
                 self.pending.pop(execution_id, None)
             return "unknown call"

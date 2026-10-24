@@ -260,3 +260,24 @@ def test_webhook_matches_an_anonymous_conversation_by_its_first_words(phone):
                    json={"id": "exec-88", "status": "completed", "transcript": "assistant: ...\nuser: fridge leak kar raha hai"})
     assert r.json()["status"] == "completed"
 
+
+def test_customer_lookup_starts_at_the_webhook_not_the_first_turn(phone, monkeypatch):
+    from fixfirst.bolna import webhook_token
+    lookups = []
+    original = rentbasket.fetch
+
+    async def counting_fetch(settings, mobile):
+        lookups.append(mobile)
+        return await original(settings, mobile)
+
+    monkeypatch.setattr(rentbasket, "fetch", counting_fetch)
+    phone.post(f"/bolna/webhook/{webhook_token('ff_test')}",
+               json={"id": "exec-99", "status": "ringing", "telephony_data": {"to_number": "+919810000000"}})
+    assert lookups == ["9810000000"]   # looked up when the webhook arrived
+    body = _body("AC kharab hai")
+    body["messages"][0]["content"] = "FIXFIRST_CALL call_ref={execution_id}"
+    phone.llm.responses.append(LLMResult(tool_calls=[call("say", text="Ji.", language="hi")]))
+    phone.post("/bolna/v1/chat/completions", json=body, headers=AUTH)
+    assert lookups == ["9810000000"]   # the first turn reused it
+    assert phone.get("/api/calls").json()[0]["customer_id"] == "RB9810000000"
+
