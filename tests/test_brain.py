@@ -527,3 +527,28 @@ def test_after_a_safety_alert_instructions_become_the_hold_line(env):
     assert speech == brain._phrase("hazard_hold", minutes=env.tenant.urgent_callback_minutes)
     assert "safety check" not in speech
 
+
+def test_tools_not_offered_this_turn_are_not_run(env):
+    # Live call: after the urgent safety ticket, the model called escalate_to_technician (not on offer).
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("escalate_to_technician", reason="caller asked", caller_requested=True, language="hi")]),
+    ])
+    run(brain.respond("AC se chingari nikal rahi hai"))
+    ticket = session.ticket
+    speech = run(brain.respond("technician bhej do")).speech
+    assert session.ticket is ticket and session.ticket["category"] == "safety"
+    assert ticket["code"].replace("-", "") not in speech.replace(" ", "")
+
+
+def test_model_water_flag_asks_where_the_water_is_first(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("flag_safety_concern", kind="water_electric", evidence="paani hai", language="hi")]),
+        LLMResult(tool_calls=[call("flag_safety_concern", kind="water_electric", evidence="plug ke paas", language="hi")]),
+    ])
+    run(brain.respond("AC thanda nahi kar raha"))
+    speech = run(brain.respond("haan paani hai yahan par")).speech
+    assert session.hazard is None and speech == brain._phrase("water_where", appliance="AC")
+    run(brain.respond("plug ke paas"))
+    assert session.hazard == "water_electric"
+

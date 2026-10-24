@@ -419,7 +419,9 @@ class Brain:
         presented_before = set(self.s.presented)
         self._lookahead_left, self._timing = LOOKAHEAD_ROUNDS, timing
         try:
-            llm_result = await self.llm.complete(self._messages(), self._tools())
+            offered = self._tools()
+            self._offered = {t["function"]["name"] for t in offered}
+            llm_result = await self.llm.complete(self._messages(), offered)
             self.s.llm_failures = 0
         except LLMError as e:
             logger.warning(f"[{self.s.id}] LLM failed: {e}")
@@ -485,7 +487,7 @@ class Brain:
             self.s.stalls = 0
         elif own_words:
             speech = own_words
-            if self.s.run and not self.s.run.finished:
+            if self.s.run and not self.s.run.finished and not self.s.closed and not self.s.ticket:
                 self.s.stalls += 1
                 if self.s.stalls >= STALL_LIMIT:
                     speech = f"{speech} {self._phrase('offer_technician')}"
@@ -516,6 +518,7 @@ class Brain:
             run = self.s.run
             steps_before = len(run.path)
             try:
+                self._offered = {"answer_step"}
                 result = await self.llm.complete(self._messages(), [self._lookahead_tool(run.node)])
             except LLMError as e:
                 logger.info(f"[{self.s.id}] look-ahead LLM failed: {e}")
@@ -662,6 +665,12 @@ class Brain:
             args.get("language") if args.get("language") in ("hi", "en") else self.s.language)
         self.s.language = lang
         self.s.publish("tool", name=tc.name, arguments=args)
+        offered = getattr(self, "_offered", None)
+        if offered is not None and tc.name not in offered:
+            # Live Bolna call: the model booked "a technician" after the urgent safety ticket existed, when
+            # escalate_to_technician wasn't on offer. Only tools offered this turn may run.
+            logger.info(f"[{self.s.id}] ignored {tc.name}: not offered this turn")
+            return {"result": f"error: {tc.name} is not available now"}
         try:
             handler = getattr(self, f"_tool_{tc.name}", None)
             if not handler:
@@ -851,12 +860,16 @@ class Brain:
     async def _tool_flag_safety_concern(self, args: dict, _presented: set[str]) -> dict:
         kind = args.get("kind") if args.get("kind") in HAZARD_KINDS else "electrical"
         last = next((m["content"] for m in reversed(self.s.messages) if m["role"] == "user"), "") or ""
-        if not self.s.safety_probed and not _DANGER_WORD.search(last.lower()):
+        if not self.s.safety_probed and not self.s.water_clarified and not _DANGER_WORD.search(last.lower()):
             # The caller said nothing dangerous-sounding; confirm once instead of raising a false alarm.
             self.s.safety_probed = True
             self.s.publish("safety_probe", kind=kind, evidence=args.get("evidence") or "")
             return {"result": "asked a safety question first; if the caller confirms danger, flag again",
                     "speak": self._phrase("safety_probe")}
+        if kind == "water_electric" and not self._caller_named_electrics() and not self.s.water_clarified:
+            self.s.water_clarified = True
+            return {"result": "asked where the water is; flag again if it's near a plug, switch, board or wires",
+                    "speak": self._phrase("water_where", appliance=appliance_name(self.s.appliance, self.s.language))}
         speech = await self._hazard(kind, source="llm", evidence=args.get("evidence") or "")
         return {"result": f"hazard {kind} handled", "speak": speech, "closing": True}
 
