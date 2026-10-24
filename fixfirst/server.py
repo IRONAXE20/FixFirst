@@ -1,6 +1,7 @@
 """FastAPI app: call page, ops view, knowledge view, WebRTC + Exotel voice endpoints and JSON APIs."""
 import asyncio
 import contextlib
+import hmac
 import importlib.util
 import statistics
 import uuid
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 
 from . import rentbasket
-from .bolna import BolnaBridge, completion_body, sse_chunks
+from .bolna import BolnaBridge, completion_body, sse_chunks, webhook_token
 from .brain import Brain
 from .config import DATA_DIR, WEB_DIR, Settings, get_settings, get_tenant, now_utc
 from .db import calls, customers, fetch_rentals, get_engine, outbox, row, tickets
@@ -327,10 +328,10 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
 
         return StreamingResponse(stream(), media_type="text/event-stream")
 
-    @app.post("/bolna/webhook")
-    async def bolna_webhook(request: Request, key: str = ""):
-        if not settings.fixfirst_llm_key or key != settings.fixfirst_llm_key:
-            raise HTTPException(401, "bad key")
+    @app.post("/bolna/webhook/{token}")
+    async def bolna_webhook(request: Request, token: str):
+        if not settings.fixfirst_llm_key or not hmac.compare_digest(token, webhook_token(settings.fixfirst_llm_key)):
+            raise HTTPException(401, "bad token")
         return {"status": await bolna.webhook(await request.json())}
 
     # ---- tickets, calls, stats -----------------------------------------------------------

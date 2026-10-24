@@ -490,3 +490,40 @@ def test_repeating_a_heard_step_gets_a_wait_phrase_not_the_step_again(env):
     speech = run(brain.respond("ruko, main remote dhoond rahi hoon")).speech
     assert speech == brain._phrase("take_your_time")
     assert not any(e["type"] == "guard" for e in session.events)
+
+
+def test_water_from_the_appliance_is_not_a_water_near_plug_alarm(env):
+    # Live Bolna test: "se paani leak kar raha hai" answered the safety question and set off the water alarm.
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="water_leak", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="hazard_water", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
+    ])
+    run(brain.respond("mere AC se paani aa raha hai"))
+    speech = run(brain.respond("se paani leak kar raha hai")).speech
+    assert session.hazard is None and session.run.current == "safety_check"
+    assert speech == brain._phrase("water_where", appliance="AC")
+    run(brain.respond("sirf AC se tapak raha hai"))
+    assert session.hazard is None and session.run.current != "safety_check"
+
+
+def test_water_near_the_plug_still_triggers(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="water_leak", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="hazard_water", language="hi")]),
+    ])
+    run(brain.respond("AC se paani aa raha hai"))
+    run(brain.respond("haan neeche wale board ke paas bhi geela hai"))
+    assert session.hazard == "water_electric"
+
+
+def test_after_a_safety_alert_instructions_become_the_hold_line(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("say", text="कृपया AC और उसके plug से दूर रहिए", language="hi")]),
+    ])
+    run(brain.respond("AC se chingari nikal rahi hai"))
+    assert session.hazard == "electrical"
+    speech = run(brain.respond("hello meri awaaz aa rahi hai?")).speech
+    assert speech == brain._phrase("hazard_hold", minutes=env.tenant.urgent_callback_minutes)
+    assert "safety check" not in speech
+

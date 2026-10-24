@@ -9,7 +9,7 @@ import secrets
 
 import httpx
 
-from .bolna import MARKER
+from .bolna import MARKER, webhook_token
 from .config import ROOT, Settings, Tenant
 
 API = "https://api.bolna.ai"
@@ -49,7 +49,7 @@ def agent_payload(settings: Settings, tenant: Tenant, public_url: str, telephony
         "agent_config": {
             "agent_name": f"{tenant.name} FixFirst",
             "agent_welcome_message": welcome(tenant),
-            "webhook_url": f"{base}/bolna/webhook?key={settings.fixfirst_llm_key}",
+            "webhook_url": f"{base}/bolna/webhook/{webhook_token(settings.fixfirst_llm_key)}",
             "call_summary_enabled": False,
             "tasks": [{
                 "task_type": "conversation",
@@ -68,7 +68,7 @@ def agent_payload(settings: Settings, tenant: Tenant, public_url: str, telephony
                         "stream": True, "buffer_size": 150, "audio_format": "wav",
                     },
                     "transcriber": {"provider": "sarvam", "model": settings.stt_model, "language": "hi",
-                                    "stream": True, "endpointing": 400},
+                                    "stream": True, "endpointing": 800},
                     "input": {"provider": telephony, "format": "wav"},
                     "output": {"provider": telephony, "format": "wav"},
                     "api_tools": None,

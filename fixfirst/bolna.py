@@ -7,6 +7,7 @@ prompt variables, e.g. "call_ref={execution_id} from={from_number} to={to_number
 """
 import asyncio
 import hashlib
+import hmac
 import json
 import re
 import time
@@ -21,6 +22,12 @@ IDLE_END_SECONDS = 20 * 60
 MARKER = "FIXFIRST_CALL"   # first word of the agent's system prompt (bolna_admin.py)
 FINAL_STATUSES = {"completed", "no-answer", "busy", "failed", "canceled", "cancelled", "stopped", "error", "balance-low"}
 _VAR = re.compile(r"\b(call_ref|from|to|customer_phone|customer_name)=(\S+)")
+
+
+def webhook_token(llm_key: str) -> str:
+    """The webhook URL's secret path part. Derived from FIXFIRST_LLM_KEY, but not the key itself: request
+    logs (Render's included) record the full URL, and the key must not end up there."""
+    return hmac.new(llm_key.encode(), b"fixfirst-bolna-webhook", hashlib.sha256).hexdigest()[:32]
 
 
 def call_vars(system_prompt: str) -> dict:

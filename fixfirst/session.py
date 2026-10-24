@@ -48,6 +48,7 @@ class CallSession:
     pending_code: bool = False
     safety_probed: bool = False
     safety_rejects: int = 0
+    water_clarified: bool = False
     outcome: str = "in_progress"
     resolution: str | None = None
     ticket: dict | None = None

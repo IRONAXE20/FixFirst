@@ -49,6 +49,7 @@ _STRONG_DENIAL = re.compile(r"^\W*(no|nope|nahi|nahin|nai|na|नहीं|ना
 _DANGER_WORD = re.compile(r"(smell|spark|chingar|dhu|smoke|burn|jalne|jala|jali|current|shock|jhatk|tingl|gas|aag|fire|flame|"
                           r"leak|paani|pani|water|wet|geela|battery|batri|hurt|behosh|unconscious|melt|pighal|"
                           r"स्मेल|गंध|बदबू|चिंगार|धुआ|स्मोक|करंट|शॉक|झटक|गैस|आग|जलने|पानी|लीक|बैटरी|बेहोश|गीला)")
+_SWITCHGEAR = re.compile(r"switch|स्विच|\bmcb\b|main board|meter|मीटर")
 _HAZARD_WORD_STRICT = re.compile(r"(smell|spark|chingar|dhu|smoke|burn|jalne|leak|current|shock|tingl|गंध|स्मेल|चिंगार|धुआ|करंट)")
 
 
@@ -254,6 +255,14 @@ PHRASES = {
     "guarded": {
         "hi": "ये step मैं phone पर नहीं बता सकती, ये technician ही करेंगे। क्या मैं technician book कर दूँ?",
         "en": "That's something only a technician should do, so I can't guide you through it. Shall I book a technician?",
+    },
+    "water_where": {
+        "hi": "क्या पानी किसी plug, switch, board या तारों के पास है, या सिर्फ़ {appliance} से टपक रहा है?",
+        "en": "Is the water near a plug, switch, board or wires, or is it only dripping from the {appliance}?",
+    },
+    "hazard_hold": {
+        "hi": "जी, मैं सुन रही हूँ। आपकी safety सबसे ज़रूरी है: हमारी team {minutes} मिनट के अंदर आपको call करेगी। तब तक कृपया appliance से दूर रहिए।",
+        "en": "Yes, I'm here. Your safety comes first: our team will call you within {minutes} minutes. Until then, please stay away from the appliance.",
     },
     "take_your_time": {
         "hi": "ठीक है, आराम से कीजिए। हो जाए तो बताइए।",
@@ -716,6 +725,13 @@ class Brain:
             self.s.safety_rejects += 1
             return {"result": "rejected: the caller hasn't said there's no hazard; asked again",
                     "speak": f"{self._phrase('safety_confirm')} {node.text(self.s.language)}"}
+        if (outcome in node.outcomes and node.outcomes[outcome].hazard == "water_electric"
+                and not self._caller_named_electrics()):
+            # "AC se paani leak ho raha hai" answers the safety question with the fault itself: water from the
+            # appliance is a playbook fault unless it's near a plug, switch, board or wires. Ask, don't alarm.
+            self.s.water_clarified = True
+            return {"result": "rejected: the caller mentioned water but nothing electrical; asked where the water is",
+                    "speak": self._phrase("water_where", appliance=appliance_name(self.s.appliance, self.s.language))}
         result = run.advance(outcome, caller_said=quote)
         if quote:
             logger.info(f"[{self.s.id}] skipped step '{node.id}' -> {outcome}: caller said {quote!r}")
@@ -935,12 +951,20 @@ class Brain:
         self.tickets.persist_call(self.s)
 
     # ---- helpers ---------------------------------------------------------------------
+    def _caller_named_electrics(self) -> bool:
+        """Does the caller's latest message mention a plug, switch, socket, board or wiring?"""
+        last = next((m["content"].lower() for m in reversed(self.s.messages)
+                     if m["role"] == "user" and isinstance(m.get("content"), str)), "")
+        return bool(self.screen.electric_re.search(last) or _SWITCHGEAR.search(last))
+
     def _safety_denied(self) -> bool:
         """Did the caller actually deny a hazard (now, or explicitly earlier in the call)?"""
         users = [m["content"].lower() for m in self.s.messages if m["role"] == "user" and isinstance(m.get("content"), str)]
         if not users:
             return False
         last = users[-1]
+        if self.s.water_clarified and not self._caller_named_electrics():
+            return True   # asked where the water is; it isn't near anything electrical
         if _STRONG_DENIAL.search(last):
             return True
         if _DENIAL.search(last) and (len(last.split()) <= 6 or _HAZARD_WORD.search(last)):
@@ -959,12 +983,16 @@ class Brain:
             return None
         text = re.sub(r"[*#_`>\[\]]+", "", text).strip()
         bad = unsafe_instruction(text)
-        if bad:
+        if bad and not self.s.hazard:
             logger.warning(f"[{self.s.id}] guard blocked: {bad!r} in {text!r}")
             self.s.publish("guard", blocked=bad, text=text)
             return self._phrase("guarded")
         off_script = physical_instruction(text)
-        node = self.s.run.node if self.s.run and not self.s.run.finished else None
+        if self.s.hazard and (bad or off_script):
+            # The safety script has been read; any further instruction is the scripted hold line, never a step.
+            self.s.publish("guard_hazard", text=text)
+            return self._phrase("hazard_hold", minutes=self.tenant.urgent_callback_minutes)
+        node = self.s.run.node if self.s.run and not self.s.run.finished and not self.s.closed else None
         if off_script and node and not node.terminal and node.id in self.s.presented:
             words = _vocab([off_script])
             if words and len(words & _node_vocab(node)) >= 0.6 * len(words):
@@ -1012,6 +1040,10 @@ class Brain:
             lines.append("No active playbook step.")
         if self.s.error_code:
             lines.append(f"Error code recorded: {self.s.error_code['code']} ({self.s.error_code.get('brand') or 'brand unknown'}).")
+        if self.s.hazard:
+            lines.append(f"SAFETY ALERT ({self.s.hazard}) is active: the safety instructions were read and an urgent "
+                         f"callback is booked within {self.tenant.urgent_callback_minutes} minutes. Don't troubleshoot or "
+                         "give instructions; reassure the caller, confirm the team will call, and say goodbye.")
         if self.s.ticket:
             lines.append(f"Ticket {self.s.ticket['code']} ({self.s.ticket['priority']}) is booked. The call is wrapping up: "
                          "reassure, answer questions about next steps, and say goodbye. If the caller mentions another "

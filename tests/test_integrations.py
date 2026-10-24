@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 import fixfirst.server as server
 from fixfirst import rentbasket
-from fixfirst.bolna import call_vars, sse_chunks
+from fixfirst.bolna import call_vars, sse_chunks, webhook_token
 from fixfirst.claude_llm import CALL_STARTED, ClaudeChat, convert
 from fixfirst.config import Settings
 from fixfirst.llm import LLMError, LLMResult, ScriptedLLM, call
@@ -210,9 +210,10 @@ def test_bolna_turns_feed_only_new_words_to_the_brain(phone):
 def test_bolna_hazard_and_hangup_webhook(phone):
     r = phone.post("/bolna/v1/chat/completions", json=_body("gas ki smell aa rahi hai kitchen mein"), headers=AUTH)
     assert "1906" in _spoken(r)
-    assert phone.post("/bolna/webhook?key=wrong", json={"id": "exec-1", "status": "completed"}).status_code == 401
-    r = phone.post("/bolna/webhook?key=ff_test", json={"id": "exec-1", "status": "completed",
-                                                        "telephony_data": {"recording_url": "https://rec/1.mp3"}})
+    assert phone.post("/bolna/webhook/wrong", json={"id": "exec-1", "status": "completed"}).status_code == 401
+    assert "ff_test" not in webhook_token("ff_test")   # the LLM key never appears in the webhook URL
+    r = phone.post(f"/bolna/webhook/{webhook_token('ff_test')}", json={"id": "exec-1", "status": "completed",
+                                                                       "telephony_data": {"recording_url": "https://rec/1.mp3"}})
     assert r.json()["status"] == "completed"
     call_row = phone.get("/api/calls").json()[0]
     assert call_row["hazard"] == "gas" and call_row["channel"] == "phone"
