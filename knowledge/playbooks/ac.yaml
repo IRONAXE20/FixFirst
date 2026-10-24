@@ -140,11 +140,13 @@ nodes:
 
   room_check:
     say:
-      en: "Are the doors and windows of the room closed, and is anything blocking the AC's air, like curtains or furniture right in front of it?"
-      hi: "क्या कमरे के दरवाज़े और खिड़कियाँ बंद हैं, और क्या AC की हवा को कुछ रोक रहा है, जैसे पर्दे या ठीक सामने रखा furniture?"
+      # Asked so that a plain "yes" means all clear: the old wording ("...closed, and is anything blocking?")
+      # made "haan" ambiguous on a live call.
+      en: "Are all the room's doors and windows closed, and is the space in front of the AC clear, with no curtains or furniture blocking its air?"
+      hi: "क्या कमरे के सारे दरवाज़े और खिड़कियाँ बंद हैं, और AC के सामने की जगह खाली है, यानी पर्दे या furniture हवा नहीं रोक रहे?"
     outcomes:
-      fixed_something: {next: wait_room, label: "Something was open or blocking; fixed it"}
-      all_ok: {next: filter_offer, label: "All closed, nothing blocking"}
+      all_ok: {next: filter_offer, label: "Yes: all closed and the space in front is clear"}
+      fixed_something: {next: wait_room, label: "Something was open or blocking; the caller has fixed it now"}
     sources: [daikin_in_troubleshooting]
 
   wait_room:
