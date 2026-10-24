@@ -3,7 +3,8 @@ import asyncio
 import pytest
 from sqlalchemy import select
 
-from fixfirst.brain import LOOKAHEAD_ROUNDS, _node_vocab, _vocab, detect_language, find_quote, technician_requested
+from fixfirst.brain import (LOOKAHEAD_ROUNDS, _node_vocab, _vocab, caller_is_done, detect_language, find_quote,
+                            technician_requested)
 
 from fixfirst.config import KNOWLEDGE_DIR
 from fixfirst.db import followups, outbox, tickets
@@ -551,4 +552,34 @@ def test_model_water_flag_asks_where_the_water_is_first(env):
     assert session.hazard is None and speech == brain._phrase("water_where", appliance="AC")
     run(brain.respond("plug ke paas"))
     assert session.hazard == "water_electric"
+
+
+@pytest.mark.parametrize("text,done", [
+    ("nahi bas, thank you", True), ("नहीं, धन्यवाद", True), ("no that's all", True), ("bas itna hi", True),
+    ("ok bye", True), ("theek hai shukriya", True),
+    ("haan, fridge bhi kharab hai", False), ("nahi, technician kab aayega?", False), ("AC nahi chal raha", False),
+    ("ek aur problem hai", False),
+])
+def test_caller_is_done(text, done):
+    assert caller_is_done(text) is done
+
+
+def test_anything_else_then_goodbye_ends_the_call(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("escalate_to_technician", reason="caller asked", caller_requested=True, language="hi")]),
+    ])
+    speech = run(brain.respond("mera AC kharab hai, kya karun")).speech
+    assert speech.endswith(brain._phrase("anything_else"))
+    goodbye = run(brain.respond("nahi bas, dhanyavaad")).speech
+    assert goodbye == brain._phrase("goodbye") and session.end_requested
+
+
+def test_another_problem_after_anything_else_is_not_a_goodbye(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("escalate_to_technician", reason="caller asked", caller_requested=True, language="hi")]),
+        LLMResult(tool_calls=[call("add_note", note="Fridge also leaking", language="hi")]),
+    ])
+    run(brain.respond("AC kharab hai"))
+    run(brain.respond("haan, fridge bhi leak kar raha hai"))
+    assert not session.end_requested
 

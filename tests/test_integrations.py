@@ -281,3 +281,26 @@ def test_customer_lookup_starts_at_the_webhook_not_the_first_turn(phone, monkeyp
     assert lookups == ["9810000000"]   # the first turn reused it
     assert phone.get("/api/calls").json()[0]["customer_id"] == "RB9810000000"
 
+
+def test_bolna_hangup_check_says_yes_only_after_the_goodbye(phone):
+    phone.llm.responses.append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", caller_requested=True,
+                                                          language="hi")]))
+    first = "mera washing machine kharab hai"
+    phone.post("/bolna/v1/chat/completions", json=_body(first), headers=AUTH)
+    check = {"model": "fixfirst", "stream": False, "messages": [
+        {"role": "system", "content": "You are an AI assistant determining if a conversation is complete. "
+                                      'Respond in json {"hangup": "Yes"} or {"hangup": "No"}'},
+        {"role": "user", "content": f"user: {first}\nassistant: ..."}]}
+    r = phone.post("/bolna/v1/chat/completions", json=check, headers=AUTH)
+    assert json.loads(r.json()["choices"][0]["message"]["content"]) == {"hangup": "No"}
+    r = phone.post("/bolna/v1/chat/completions", json=_body(first, "booked...", "nahi bas, thank you"), headers=AUTH)
+    assert "दिन शुभ हो" in _spoken(r)
+    r = phone.post("/bolna/v1/chat/completions", json=check, headers=AUTH)
+    assert json.loads(r.json()["choices"][0]["message"]["content"]) == {"hangup": "Yes"}
+
+
+def test_caller_saying_cut_the_call_still_reaches_the_brain(phone):
+    phone.llm.responses.append(LLMResult(tool_calls=[call("say", text="Ji, bataiye.", language="hi")]))
+    r = phone.post("/bolna/v1/chat/completions", json=_body("please don't cut the call, my AC is broken"), headers=AUTH)
+    assert _spoken(r) == "Ji, bataiye."
+

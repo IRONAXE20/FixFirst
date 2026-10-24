@@ -75,15 +75,19 @@ def agent_payload(settings: Settings, tenant: Tenant, public_url: str, telephony
                 },
                 "toolchain": {"execution": "parallel", "pipelines": [["transcriber", "llm", "synthesizer"]]},
                 "task_config": {
-                    "hangup_after_silence": 20,
+                    # Long enough for a caller who goes quiet while cleaning filters; the call normally
+                    # ends through the hangup check once the caller has said goodbye.
+                    "hangup_after_silence": 90,
                     "call_terminate": 900,
-                    "hangup_after_LLMCall": False,   # end-of-call checks would go to our endpoint as fake turns
+                    # Bolna asks our endpoint after each reply whether to hang up; bolna.py side_check answers
+                    # "Yes" only after the caller declined "anything else?" and heard the goodbye.
+                    "hangup_after_LLMCall": True,
                     "number_of_words_for_interruption": 2,
                     "backchanneling": False,
                     "ambient_noise": False,
                     "voicemail": False,
                     "check_if_user_online": True,
-                    "trigger_user_online_message_after": 12,
+                    "trigger_user_online_message_after": 20,
                 },
             }],
         },

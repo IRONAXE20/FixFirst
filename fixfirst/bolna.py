@@ -24,6 +24,7 @@ IDLE_END_SECONDS = 20 * 60
 PENDING_SECONDS = 5 * 60   # how long a webhook-announced execution waits for its first conversation turn
 MARKER = "FIXFIRST_CALL"   # first word of the agent's system prompt (bolna_admin.py)
 FINAL_STATUSES = {"completed", "no-answer", "busy", "failed", "canceled", "cancelled", "stopped", "error", "balance-low"}
+_HANGUP_CHECK = re.compile(r"hang ?up|cut the call|end the call|conversation (is )?(complete|over|ended)|\"hangup\"", re.I)
 _VAR = re.compile(r"\b(call_ref|from|to|customer_phone|customer_name)=(\S+)")
 
 
@@ -96,8 +97,11 @@ class BolnaBridge:
         system = next((_text(m.get("content")) for m in messages if m.get("role") == "system"), "")
         convo = [m for m in messages if m.get("role") in ("user", "assistant")]
         users = [_text(m.get("content")) for m in convo if m.get("role") == "user"]
-        if MARKER not in system:
-            return ""   # one of Bolna's own side checks, not the caller's conversation
+        last_user = users[-1] if users else ""
+        # A check sent inside our own conversation would carry Bolna's JSON answer format; a caller saying
+        # "cut the call" must still reach the brain.
+        if MARKER not in system or '"hangup"' in last_user:
+            return self.side_check(system, messages)   # Bolna's own check, not the caller's conversation
         cv = call_vars(system)
         key = cv.get("call_ref") or self._fallback_key(convo)
         async with self._open_lock:   # two first requests for one call must not open two sessions
@@ -115,6 +119,21 @@ class BolnaBridge:
             result = await brain.respond(" ".join(new))
             call.last_speech = result.speech
             return result.speech
+
+    def side_check(self, system: str, messages: list[dict]) -> str:
+        """Bolna's hangup-using-a-prompt check (hangup_after_LLMCall) asks after each reply whether to end the
+        call. We answer from the call's own state: yes only after the caller declined "anything else?" and
+        heard the goodbye. Bolna's prompt asks for {"hangup": "Yes"|"No"}."""
+        text = " ".join(_text(m.get("content")) for m in messages)
+        call = max((c for c in self.calls.values() if c.first_words and c.first_words in text),
+                   key=lambda c: c.last_active, default=None)
+        session = self.store.get(call.session_id) if call else None
+        hangup = bool(session and session.end_requested)
+        logger.info(f"Bolna side check: system={system[:90]!r} roles={[m.get('role') for m in messages][-6:]} "
+                    f"call={'matched' if call else 'unmatched'} hangup={hangup}")
+        if not call and not _HANGUP_CHECK.search(text):
+            return ""
+        return json.dumps({"hangup": "Yes" if hangup else "No"})
 
     def stream_cancelled(self, messages: list[dict]) -> None:
         """Bolna dropped the stream (the caller talked over the reply): the new step wasn't heard."""

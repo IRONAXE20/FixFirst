@@ -76,6 +76,21 @@ def detect_language(text: str) -> str | None:
     return None
 
 
+_DONE = re.compile(r"\b(no|nope|nothing|that'?s all|that is all|all good|no thanks?|thanks?|thank you|bye|goodbye|nahi|nahin|nai|"
+                   r"na|bas|kuch nahi|kuchh nahi|nahi ji|bas itna|bas yahi|shukriya|dhanyavaad|dhanyawad|theek hai|thik hai|"
+                   r"ok|okay|alvida)\b|नहीं|नही|बस|कुछ नहीं|धन्यवाद|शुक्रिया|थैंक|ठीक है|बाय|अलविदा|ओके")
+_MORE = re.compile(r"\b(ac|fridge|frij|washing|machine|washer|tv|inverter|battery|purifier|stove|chulha|geyser|microwave|"
+                   r"another|also|aur ek|ek aur|bhi|kharab|problem|issue|leak|band hai|chal nahi|nahi chal|kaam nahi|"
+                   r"technician|kab|when|kitne)\b|एसी|फ्रिज|मशीन|टीवी|इन्वर्टर|बैटरी|प्यूरीफायर|स्टोव|चूल्हा|खराब|प्रॉब्लम|"
+                   r"और एक|एक और|भी|लीक|बंद है|नहीं चल|टेक्नीशियन|कब")
+
+
+def caller_is_done(text: str) -> bool:
+    """After "anything else?": a short no / thanks / bye, with no new appliance or problem in it."""
+    t = text.lower().strip()
+    return len(t.split()) <= 8 and bool(_DONE.search(t)) and not _MORE.search(t)
+
+
 def technician_requested(text: str) -> bool:
     for clause in re.split(r"[.,!?;।]| but | par | lekin ", text.lower()):
         if any(rx.search(clause) for rx in _TECH_REQUEST) and not _TECH_NOT.search(clause):
@@ -208,13 +223,21 @@ PHRASES = {
     },
     "escalated": {
         "hi": "मैंने आपके लिए technician book कर दिया है। आपका ticket number है {code}। {promise} "
-              "मैं WhatsApp पर details और photo भेजने का link भी भेज रही हूँ, ताकि technician पूरी तैयारी से आए। और कुछ मदद चाहिए?",
+              "मैं WhatsApp पर details और photo भेजने का link भी भेज रही हूँ, ताकि technician पूरी तैयारी से आए। क्या मैं आपकी और कोई मदद कर सकती हूँ?",
         "en": "I've booked a technician for you. Your ticket number is {code}. {promise} "
-              "I'm also sending the details on WhatsApp, with a link to share a photo so the technician comes prepared. Is there anything else I can help with?",
+              "I'm also sending the details on WhatsApp, with a link to share a photo so the technician comes prepared. Is there anything else I can help you with?",
     },
     "resolved_tail": {
-        "hi": "मैं कल WhatsApp पर पूछ लूँगी कि सब ठीक चल रहा है या नहीं। {company} को call करने के लिए धन्यवाद!",
-        "en": "I'll check with you on WhatsApp tomorrow to make sure it's still working. Thanks for calling {company}!",
+        "hi": "मैं कल WhatsApp पर पूछ लूँगी कि सब ठीक चल रहा है या नहीं। क्या मैं आपकी और कोई मदद कर सकती हूँ?",
+        "en": "I'll check with you on WhatsApp tomorrow to make sure it's still working. Is there anything else I can help you with?",
+    },
+    "anything_else": {
+        "hi": "क्या मैं आपकी और कोई मदद कर सकती हूँ?",
+        "en": "Is there anything else I can help you with?",
+    },
+    "goodbye": {
+        "hi": "ठीक है! {company} को call करने के लिए धन्यवाद। आपका दिन शुभ हो!",
+        "en": "Alright! Thank you for calling {company}. Have a nice day!",
     },
     "no_playbook": {
         "hi": "इस {appliance} के लिए अभी मेरे पास guided steps नहीं हैं, इसलिए मैं technician book कर रही हूँ।",
@@ -378,6 +401,14 @@ class Brain:
             speech = await self._hazard(hazard.kind, source="screen", evidence=hazard.matched)
             self.s.messages.append({"role": "assistant", "content": speech})
             result = TurnResult(speech=speech, hazard=hazard.kind)
+        elif self.s.closed and self.s.asked_anything_else and not self.s.end_requested and caller_is_done(text):
+            # The problem is closed, we asked "anything else?", and the caller is done: say goodbye. On a
+            # phone call the Bolna bridge then tells Bolna to hang up (see bolna.py hangup_answer).
+            speech = self._phrase("goodbye")
+            self.s.end_requested = True
+            self.s.messages.append({"role": "assistant", "content": speech})
+            self.s.publish("goodbye")
+            result = TurnResult(speech=speech)
         elif not self.s.ticket and technician_requested(text):
             stopped = f" (stopped at step '{self.s.run.current}')" if self.s.run and not self.s.run.finished else ""
             speech = await self._escalate(likely_cause=f"Customer asked for a technician{stopped}",
@@ -909,7 +940,7 @@ class Brain:
                                            f"{self.tenant.name} FixFirst: checking in on your {name}. Is it working now? "
                                            f"Reply YES, or NO and we'll book a technician.")
             self._close("followup")
-            return {"result": "follow-up scheduled", "speak": text, "closing": True}
+            return {"result": "follow-up scheduled", "speak": f"{text} {self._phrase('anything_else')}", "closing": True}
         if node.kind == "escalate":
             prefix = node.text(self.s.language)
             closing = await self._escalate(likely_cause=node.likely_cause or "Needs a technician",
@@ -960,6 +991,8 @@ class Brain:
     def _close(self, outcome: str) -> None:
         self.s.outcome = outcome
         self.s.closed = True
+        # Resolved, follow-up and technician closings all end with "anything else?" (the safety script doesn't).
+        self.s.asked_anything_else = outcome != "safety"
         self.s.publish("outcome", outcome=outcome, resolution=self.s.resolution)
         self.tickets.persist_call(self.s)
 
