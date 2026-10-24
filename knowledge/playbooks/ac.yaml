@@ -1,0 +1,292 @@
+# AC (split or window): not turning on, not cooling, leaking, error code, noise.
+#
+# How playbooks work: the agent speaks each node's `say` text word for word and the LLM
+# only classifies the caller's answer into one of the node's `outcomes`. The server rejects
+# any transition that isn't listed, so the agent cannot give an instruction that isn't here.
+#
+# Node kinds: question/step (default) · resolve · escalate · followup.
+# Outcome targets: next: <node> · hazard: <kind from safety/hazards.yaml>.
+id: ac_not_cooling
+appliance: ac
+title: {en: "AC not working or not cooling", hi: "AC चल नहीं रहा या ठंडा नहीं कर रहा"}
+status: draft-unreviewed       # set to "reviewed" once RentBasket's senior technician signs off
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "Before we start, a quick safety check. Is there any burning smell, sparks, smoke, or water near the AC's plug or switch?"
+      hi: "शुरू करने से पहले एक छोटा safety check. क्या AC के पास कोई जलने की smell, चिंगारी, धुआँ, या plug या switch के पास पानी है?"
+    outcomes:
+      no_hazard: {next: triage, label: "No burning smell, sparks, smoke or water near the plug"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, sparks or smoke"}
+      hazard_water: {hazard: water_electric, label: "Water near the plug, switch or wiring"}
+    sources: [fixfirst_policy]
+
+  triage:
+    say:
+      en: "Is the AC not turning on at all, or is it running but not cooling properly? Or is it leaking water or showing an error code?"
+      hi: "AC बिल्कुल on नहीं हो रहा, या चल रहा है पर ठीक से ठंडा नहीं कर रहा? या पानी टपक रहा है या कोई error code दिख रहा है?"
+    outcomes:
+      not_starting: {next: remote_display, label: "Does not turn on / no response"}
+      not_cooling: {next: mode_check, label: "Runs but not cooling or weak cooling"}
+      water_leak: {next: esc_water_leak, label: "Water dripping from the indoor unit"}
+      error_code: {next: error_code, label: "An error code is shown on the AC"}
+      noise_smell: {next: esc_noise, label: "Strange noise or a bad (not burning) smell"}
+    sources: [daikin_in_troubleshooting]
+
+  # ---- not turning on ---------------------------------------------------------------
+  remote_display:
+    say:
+      en: "Please point the remote at the AC and press ON. Does the remote's own screen show anything?"
+      hi: "Remote को AC की तरफ करके ON दबाइए। क्या remote की अपनी screen पर कुछ दिख रहा है?"
+    outcomes:
+      started: {next: resolved, label: "The AC started now"}
+      remote_blank: {next: batteries, label: "Remote screen is blank"}
+      remote_ok: {next: wall_switch, label: "Remote screen works but the AC doesn't respond"}
+    sources: [daikin_in_troubleshooting]
+
+  batteries:
+    say:
+      en: "The remote's batteries are probably dead. Please put in two new batteries of the same size, matching the plus and minus marks, and press ON again. Did the AC start?"
+      hi: "शायद remote की batteries खत्म हो गई हैं। उसी size की दो नई batteries plus और minus का निशान मिलाकर डालिए, और फिर से ON दबाइए। क्या AC चालू हुआ?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: wall_switch, label: "New batteries, still no response"}
+      no_batteries: {next: unit_button, label: "No spare batteries right now"}
+    sources: [daikin_in_troubleshooting]
+
+  unit_button:
+    say:
+      en: "No problem. Many split ACs have a small ON/OFF button on the indoor unit itself, usually just under the front panel. If you can reach it safely, press it once. Did the AC start?"
+      hi: "कोई बात नहीं। कई split AC में indoor unit पर ही एक छोटा ON/OFF button होता है, आमतौर पर front panel के ठीक नीचे। अगर आप safely पहुँच सकते हैं, तो उसे एक बार दबाइए। क्या AC चालू हुआ?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: wall_switch, label: "Pressed it, nothing happened"}
+      cant_reach: {next: wall_switch, label: "Can't find or reach the button"}
+    sources: [daikin_in_troubleshooting]
+
+  wall_switch:
+    say:
+      en: "Please check the wall switch or plug point the AC is connected to. Some ACs have a separate big switch or a small breaker near the unit. Is it switched on?"
+      hi: "AC जिस wall switch या plug point से जुड़ा है, उसे check कीजिए। कुछ AC का अलग बड़ा switch या unit के पास छोटा breaker होता है। क्या वो ON है?"
+    outcomes:
+      was_off: {next: check_started, label: "It was off, now switched on"}
+      already_on: {next: mcb, label: "It was already on"}
+    sources: [daikin_in_troubleshooting]
+
+  check_started:
+    say:
+      en: "Now press ON on the remote. Did the AC start?"
+      hi: "अब remote पर ON दबाइए। क्या AC चालू हुआ?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: mcb, label: "Still no response"}
+
+  mcb:
+    say:
+      en: "Let's check the main switch board, the box with a row of small switches, usually near the main door or the kitchen. Please do this only with dry hands. Is any switch pointing down, in the off position?"
+      hi: "अब main switch board check करते हैं, वो box जिसमें छोटे-छोटे switches की line होती है, आमतौर पर main door या kitchen के पास। ये सिर्फ सूखे हाथों से कीजिए। क्या कोई switch नीचे, यानी OFF position में है?"
+    help:
+      en: "It's called the MCB box. It usually has a small door, and inside there is a row of switches about the size of a finger. On means pointing up; off means pointing down."
+      hi: "इसे MCB box कहते हैं। इसमें आमतौर पर एक छोटा दरवाज़ा होता है, और अंदर उंगली जितने बड़े switches की एक line होती है। ऊपर मतलब ON, नीचे मतलब OFF।"
+    outcomes:
+      one_down: {next: mcb_reset, label: "One switch is down / off"}
+      all_up: {next: power_cut, label: "All switches are up / on"}
+      cant_find: {next: esc_no_power, label: "Can't find or reach the switch board"}
+    sources: [daikin_in_troubleshooting]
+
+  mcb_reset:
+    say:
+      en: "Push that switch up once, then try the AC again. If the switch falls down again, please leave it off and don't try again. Did the AC start, and did the switch stay up?"
+      hi: "उस switch को एक बार ऊपर कर दीजिए, फिर AC चलाकर देखिए। अगर switch फिर से नीचे गिर जाए, तो उसे वैसे ही छोड़ दीजिए और दोबारा मत कीजिए। क्या AC चालू हुआ और switch ऊपर ही रहा?"
+    outcomes:
+      fixed: {next: resolved, label: "AC started and the switch stayed up"}
+      trips_again: {next: esc_mcb_trip, label: "The switch fell down again"}
+      still_dead: {next: esc_no_power, label: "Switch stayed up but the AC still doesn't start"}
+    sources: [daikin_in_troubleshooting]
+
+  power_cut:
+    say:
+      en: "Is the rest of the house on normal power right now, or running on an inverter or backup? Most home inverters can't run an AC."
+      hi: "क्या अभी घर में बाकी सब normal बिजली पर चल रहा है, या inverter या backup पर? ज़्यादातर घर के inverter AC नहीं चला पाते।"
+    outcomes:
+      on_backup: {next: resolved_power_cut, label: "Power cut, house is on inverter or backup"}
+      normal_power: {next: esc_no_power, label: "Normal power is on"}
+    sources: [daikin_in_troubleshooting]
+
+  # ---- running but not cooling -------------------------------------------------------
+  mode_check:
+    say:
+      en: "Please look at the remote's screen. It should show Cool mode, the snowflake symbol, not Fan, Dry or Auto, and the temperature should be around 24 degrees. Is it set like that?"
+      hi: "Remote की screen देखिए। उसमें Cool mode, यानी snowflake वाला निशान होना चाहिए, Fan, Dry या Auto नहीं, और temperature लगभग 24 degree होना चाहिए। क्या ऐसा ही set है?"
+    help:
+      en: "The snowflake is the Cool symbol. A fan symbol means it only blows air, and a water-drop symbol is Dry mode. Press the Mode button until you see the snowflake."
+      hi: "Snowflake, यानी बर्फ़ वाला निशान, Cool mode है। Fan वाला निशान मतलब सिर्फ हवा, और पानी की बूँद वाला Dry mode है। Mode button तब तक दबाइए जब तक snowflake न दिखे।"
+    outcomes:
+      was_wrong: {next: wait_mode, label: "It's on another mode (Fan, Dry, Auto) or temperature"}
+      already_correct: {next: room_check, label: "Already on Cool at about 24"}
+    sources: [daikin_in_troubleshooting]
+
+  wait_mode:
+    say:
+      en: "Please press the Mode button on the remote until you see the snowflake, set it to 24 degrees, and give it about five minutes. Is colder air coming out now?"
+      hi: "कृपया remote पर Mode button तब तक दबाइए जब तक snowflake वाला निशान न दिखे, temperature 24 degree कीजिए, और लगभग पाँच मिनट चलने दीजिए। क्या अब ठंडी हवा आ रही है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, cold air now"}
+      not_fixed: {next: room_check, label: "Still not cold"}
+      later: {next: followup, label: "Will check later"}
+
+  room_check:
+    say:
+      en: "Are the doors and windows of the room closed, and is anything blocking the AC's air, like curtains or furniture right in front of it?"
+      hi: "क्या कमरे के दरवाज़े और खिड़कियाँ बंद हैं, और क्या AC की हवा को कुछ रोक रहा है, जैसे पर्दे या ठीक सामने रखा furniture?"
+    outcomes:
+      fixed_something: {next: wait_room, label: "Something was open or blocking; fixed it"}
+      all_ok: {next: filter_offer, label: "All closed, nothing blocking"}
+    sources: [daikin_in_troubleshooting]
+
+  wait_room:
+    say:
+      en: "Let it run for five minutes. Is it cooling better now?"
+      hi: "पाँच मिनट चलने दीजिए। क्या अब बेहतर ठंडा कर रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, cooling better"}
+      not_fixed: {next: filter_offer, label: "No difference"}
+      later: {next: followup, label: "Will check later"}
+
+  filter_offer:
+    say:
+      en: "The most common cause is dirty filters, behind the front panel of the indoor unit. Can you reach the unit safely from a stable stool? Please don't use a chair with wheels."
+      hi: "सबसे common वजह गंदे filters होते हैं, जो indoor unit के front panel के पीछे होते हैं। क्या आप किसी मज़बूत stool पर खड़े होकर safely वहाँ पहुँच सकते हैं? पहियों वाली chair का इस्तेमाल मत कीजिए।"
+    outcomes:
+      can_reach: {next: filter_open, label: "Yes, can reach it safely"}
+      cant_reach: {next: esc_filter_service, label: "Too high or can't do it"}
+      recently_cleaned: {next: outdoor_unit, label: "Filters were cleaned recently"}
+    sources: [daikin_in_troubleshooting]
+
+  filter_open:
+    say:
+      en: "First switch the AC off with the remote, and then at the wall switch. Then gently lift the front panel of the indoor unit until it stays open. Tell me when you can see the filters."
+      hi: "पहले remote से AC बंद कीजिए, और फिर wall switch से। फिर indoor unit का front panel धीरे से ऊपर उठाइए जब तक वो खुला न रुक जाए। जब filters दिखें तो मुझे बताइए।"
+    outcomes:
+      done: {next: filter_wash, label: "Panel open, filters visible"}
+      cant_open: {next: esc_filter_service, label: "Can't open the panel"}
+    sources: [daikin_in_troubleshooting]
+
+  filter_wash:
+    say:
+      en: "Slide out the two mesh filters and rinse them under normal tap water, not hot water. Shake off the water and let them dry for a few minutes, or pat them dry with a cloth. Then slide them back in and close the panel. Tell me when it's done."
+      hi: "दोनों जाली वाले filters बाहर खिसकाइए और normal नल के पानी से धो लीजिए, गरम पानी से नहीं। पानी झाड़ कर कुछ मिनट सूखने दीजिए, या कपड़े से पोंछ लीजिए। फिर उन्हें वापस लगाकर panel बंद कर दीजिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: filter_restart, label: "Filters cleaned and back in"}
+      later: {next: followup, label: "Will do it later"}
+    sources: [daikin_in_troubleshooting]
+
+  filter_restart:
+    say:
+      en: "Now switch the wall switch back on, start the AC on Cool at 24, and give it about ten minutes. Is it cooling better?"
+      hi: "अब wall switch फिर से on कीजिए, AC को Cool पर 24 degree पर चलाइए, और लगभग दस मिनट दीजिए। क्या अब बेहतर ठंडा कर रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, cooling better"}
+      not_fixed: {next: outdoor_unit, label: "Still not cooling"}
+      later: {next: followup, label: "Will check later"}
+
+  outdoor_unit:
+    say:
+      en: "One last check. If you can see the outdoor unit safely, from a balcony or window, is its fan spinning, and is anything covering it, like a cloth, boxes or plants? Please don't open it or put your hand near the fan."
+      hi: "एक आखिरी check. अगर आप balcony या खिड़की से outdoor unit safely देख सकते हैं, तो क्या उसका fan घूम रहा है, और क्या उसे कुछ ढक रहा है, जैसे कपड़ा, डिब्बे या पौधे? उसे खोलिए मत और fan के पास हाथ मत ले जाइए।"
+    outcomes:
+      blocked_cleared: {next: outdoor_recheck, label: "Something was covering it; removed it"}
+      fan_not_spinning: {next: esc_outdoor_fan, label: "Outdoor fan is not spinning"}
+      fan_spinning_clear: {next: esc_refrigerant, label: "Fan spinning, nothing blocking"}
+      cant_see: {next: esc_cooling_general, label: "Can't see the outdoor unit"}
+    sources: [daikin_in_troubleshooting]
+
+  outdoor_recheck:
+    say:
+      en: "Give it ten minutes with the outdoor unit clear. Is it cooling better now?"
+      hi: "Outdoor unit साफ़ होने के बाद दस मिनट दीजिए। क्या अब बेहतर ठंडा कर रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, cooling now"}
+      not_fixed: {next: esc_refrigerant, label: "Still not cooling"}
+      later: {next: followup, label: "Will check later"}
+
+  # ---- error code: captured for the technician, never interpreted -------------------
+  error_code:
+    say:
+      en: "What does the AC's display show? Please read the letters and numbers to me, and tell me the brand written on the unit."
+      hi: "AC की display पर क्या दिख रहा है? अक्षर और नंबर मुझे पढ़कर बताइए, और unit पर लिखा brand भी बताइए।"
+    outcomes:
+      code_given: {next: esc_error_code, label: "Caller read out the code"}
+      no_code: {next: triage, label: "No code visible after all"}
+    sources: [lg_split_ac_codes]
+
+  # ---- endings -----------------------------------------------------------------------
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "That's great, your AC is working again!"
+      hi: "बहुत बढ़िया, आपका AC फिर से चल रहा है!"
+
+  resolved_power_cut:
+    kind: resolve
+    resolution: no_fault_power_cut
+    say:
+      en: "Then the AC itself is fine. It will start once the main power is back. If it still doesn't start after that, just call us again."
+      hi: "तो AC में कोई खराबी नहीं है। Main बिजली वापस आते ही ये चल जाएगा। अगर उसके बाद भी चालू न हो, तो हमें फिर से call कर लीजिए।"
+
+  followup:
+    kind: followup
+    followup_minutes: 30
+    say:
+      en: "No problem, take your time. I'll message you on WhatsApp in about 30 minutes. If it still isn't cooling, just reply and I'll book a technician."
+      hi: "कोई बात नहीं, आराम से कीजिए। मैं लगभग 30 मिनट में आपको WhatsApp पर message करूँगी। अगर तब भी ठंडा न करे, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+
+  esc_water_leak:
+    kind: escalate
+    say:
+      en: "Please switch the AC off with the remote and at the wall switch, and keep a bucket or cloth under the drip."
+      hi: "कृपया remote से और wall switch से AC बंद कर दीजिए, और टपकने वाली जगह के नीचे बाल्टी या कपड़ा रख दीजिए।"
+    likely_cause: "Water leaking from the indoor unit: blocked drain pipe or unit tilted"
+    technician_note: "Check drain pipe and indoor unit level"
+    sources: [daikin_in_troubleshooting]
+  esc_noise:
+    kind: escalate
+    likely_cause: "Abnormal noise or smell from the AC"
+    technician_note: "Inspect fan, mounting and coil; ask the customer to describe the noise"
+  esc_mcb_trip:
+    kind: escalate
+    say:
+      en: "Please keep that switch off and don't use the AC until our technician checks it."
+      hi: "कृपया वो switch बंद ही रहने दीजिए और technician के check करने तक AC मत चलाइए।"
+    likely_cause: "AC trips the MCB: possible electrical fault in the unit or wiring"
+    technician_note: "Electrical inspection; customer told not to reset the MCB again"
+  esc_no_power:
+    kind: escalate
+    likely_cause: "AC gets no power with switch and MCB on"
+    technician_note: "Check socket, wiring, remote receiver and indoor PCB"
+  esc_filter_service:
+    kind: escalate
+    likely_cause: "Weak cooling; filters not cleaned (customer could not reach or open the unit)"
+    technician_note: "Filter and coil cleaning, then re-check cooling"
+  esc_outdoor_fan:
+    kind: escalate
+    likely_cause: "Outdoor fan not spinning: likely capacitor or fan motor"
+    technician_note: "Carry capacitor and check fan motor"
+  esc_refrigerant:
+    kind: escalate
+    likely_cause: "Weak cooling with clean filters and outdoor fan running: likely low refrigerant or compressor"
+    technician_note: "Carry leak detector and refill kit; check compressor"
+    sources: [lg_split_ac_codes]
+  esc_cooling_general:
+    kind: escalate
+    likely_cause: "Not cooling after basic checks; outdoor unit not checked"
+    technician_note: "Full cooling diagnosis"
+  esc_error_code:
+    kind: escalate
+    likely_cause: "Error code shown on the AC display (see code)"
+    technician_note: "Look up the code for this model before the visit"
+    sources: [lg_split_ac_codes]

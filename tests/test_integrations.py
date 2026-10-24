@@ -1,0 +1,231 @@
+"""Claude client conversion, RentBasket customer lookup and the Bolna custom-LLM bridge (no network)."""
+import asyncio
+import json
+from types import SimpleNamespace
+
+import pytest
+from fastapi.testclient import TestClient
+
+import fixfirst.server as server
+from fixfirst import rentbasket
+from fixfirst.bolna import call_vars, sse_chunks
+from fixfirst.claude_llm import CALL_STARTED, ClaudeChat, convert
+from fixfirst.config import Settings
+from fixfirst.llm import LLMError, LLMResult, ScriptedLLM, call
+
+API_DATA = {
+    "mobile_no": "9810000000", "name": "Test Customer",
+    "product_ids": ["1024", "1153", "1108", "2069", "11551"],
+    "product_names": ['SMART LED 32" - 2011', "Fridge 190 Ltr - 2016", "Window AC - 2009",
+                      "Wooden Single Bed 6x3 Basic - 2017", "Fully Automatic Washing M/c - 2025"],
+    "address": ["Flat 12, Tower B, Sector 45, Gurgaon, Haryana", "Somewhere else"],
+    "complaints": [],
+}
+
+
+# ---- Claude ------------------------------------------------------------------------------
+def _history():
+    tc = call("start_troubleshooting", appliance="ac", symptom="unknown", language="hi")
+    return [
+        {"role": "system", "content": "SYSTEM"},
+        {"role": "assistant", "content": "नमस्ते!"},
+        {"role": "user", "content": "AC kharab hai"},
+        LLMResult(tool_calls=[tc, call("record_error_code", code="E4", language="hi")]).assistant_message(),
+        {"role": "tool", "tool_call_id": tc.id, "content": "started"},
+        {"role": "tool", "tool_call_id": "call_record_error_code_2", "content": "noted"},
+        {"role": "assistant", "content": "Safety check?"},
+        {"role": "user", "content": "nahi"},
+    ]
+
+
+def test_convert_maps_openai_history_to_messages_api():
+    system, msgs, used = convert(_history())
+    assert system == "SYSTEM"
+    assert [m["role"] for m in msgs] == ["user", "assistant", "user", "assistant", "user", "assistant", "user"]
+    assert msgs[0]["content"][0]["text"] == CALL_STARTED   # the greeting can't open the conversation
+    tool_uses = [b for b in msgs[3]["content"] if b["type"] == "tool_use"]
+    assert [b["name"] for b in tool_uses] == ["start_troubleshooting", "record_error_code"]
+    assert tool_uses[0]["input"]["appliance"] == "ac"
+    # Both results go back in ONE user message, before anything else.
+    assert [b["type"] for b in msgs[4]["content"]] == ["tool_result", "tool_result"]
+    assert used == {"start_troubleshooting", "record_error_code"}
+
+
+class _FakeMessages:
+    def __init__(self, response):
+        self.response, self.kwargs = response, None
+
+    async def create(self, **kwargs):
+        self.kwargs = kwargs
+        return self.response
+
+
+def _claude(response):
+    chat = ClaudeChat(api_key="test", model="claude-haiku-5-5")
+    chat.client = SimpleNamespace(messages=_FakeMessages(response))
+    return chat
+
+
+def _response(*blocks, stop_reason="tool_use"):
+    return SimpleNamespace(content=list(blocks), stop_reason=stop_reason)
+
+
+def test_claude_forces_a_tool_and_parses_calls():
+    tool = SimpleNamespace(type="tool_use", id="toolu_1", name="say", input={"text": "Ji", "language": "hi"})
+    chat = _claude(_response(tool))
+    tools = [{"type": "function", "function": {"name": "say", "description": "d", "parameters": {"type": "object"}}},
+             {"type": "function", "function": {"name": "answer_step", "description": "d", "parameters": {"type": "object"}}}]
+    result = asyncio.run(chat.complete(_history(), tools))
+    kw = chat.client.messages.kwargs
+    assert kw["tool_choice"] == {"type": "any"} and kw["model"] == "claude-haiku-5-5"
+    assert "temperature" not in kw and kw["tools"][0]["input_schema"] == {"type": "object"}
+    assert result.tool_calls[0].name == "say" and result.tool_calls[0].arguments["text"] == "Ji"
+
+
+def test_claude_single_tool_is_named_and_no_tools_still_defines_history_tools():
+    chat = _claude(_response(SimpleNamespace(type="text", text="B"), stop_reason="end_turn"))
+    one = [{"type": "function", "function": {"name": "answer_step", "parameters": {"type": "object"}}}]
+    asyncio.run(chat.complete(_history(), one))
+    assert chat.client.messages.kwargs["tool_choice"] == {"type": "tool", "name": "answer_step"}
+    result = asyncio.run(chat.complete(_history(), []))
+    kw = chat.client.messages.kwargs
+    assert kw["tool_choice"] == {"type": "none"} and {t["name"] for t in kw["tools"]} == {"start_troubleshooting", "record_error_code"}
+    assert result.content == "B"
+
+
+def test_claude_refusal_is_an_llm_error():
+    chat = _claude(_response(stop_reason="refusal"))
+    with pytest.raises(LLMError):
+        asyncio.run(chat.complete([{"role": "user", "content": "hi"}], []))
+
+
+def test_brain_provider_prefers_claude_and_ignores_bolna_keys():
+    assert Settings(anthropic_api_key="k").brain_provider == "anthropic"
+    assert Settings(sarvam_api_key="bn-123").brain_provider is None
+    assert Settings(sarvam_api_key="sk_1").brain_provider == "sarvam"
+    assert Settings(sarvam_api_key="sk_1", anthropic_api_key="k", llm_provider="sarvam").brain_provider == "sarvam"
+
+
+# ---- RentBasket --------------------------------------------------------------------------
+@pytest.mark.parametrize("name,appliance", [
+    ("Window AC", "ac"), ("Split AC - 1.5 Ton", "ac"), ("Fridge 190 Ltr", "fridge"), ("Double Door Fridge", "fridge"),
+    ("Fully Automatic Washing M/c", "washer"), ("Semi Automatic Washing Machine", "washer_semi"),
+    ('SMART LED 32"', "tv"), ("Inverter with Double Battery", "inverter"), ("Water Purifier - Under-the-Counter (UTC)", "water_purifier"),
+    ("Gas Stove - 3 Burner", "stove"), ("Microwave (Solo) 20 L", "microwave"), ("Induction Cooker", "induction"),
+    ("Wooden Almirah 6.5x3 ft", "furniture"), ("3-Seater Fabric Sofa", "furniture"),
+])
+def test_product_names_map_to_appliances(name, appliance):
+    assert rentbasket.appliance_for(name) == appliance
+
+
+def test_parse_strips_the_year_and_keeps_the_address():
+    customer, rows = rentbasket.parse(API_DATA, "9810000000", "hi")
+    assert customer["id"] == "RB9810000000" and customer["phone"] == "+91 9810000000"
+    assert customer["area"] == "Sector 45, Gurgaon, Haryana"
+    labels = {r["label"]: (r["appliance"], r["details"]["year"]) for r in rows}
+    assert labels["Window AC"] == ("ac", "2009") and labels['SMART LED 32"'] == ("tv", "2011")
+
+
+def test_mobile_number_normalisation():
+    assert rentbasket.mobile10("+91 98100 00000") == "9810000000"
+    assert rentbasket.mobile10("12345") is None
+
+
+# ---- Bolna bridge ------------------------------------------------------------------------
+def test_call_vars_skip_unsubstituted_placeholders():
+    prompt = "FIXFIRST_CALL call_ref=abc-123 from=+919810000000 to={to_number} customer_phone={customer_phone}"
+    assert call_vars(prompt) == {"call_ref": "abc-123", "from": "+919810000000"}
+
+
+def test_sse_chunks_are_openai_deltas_ending_in_done():
+    chunks = list(sse_chunks("पहला वाक्य। Second one.", "fixfirst"))
+    assert chunks[-1] == "data: [DONE]\n\n"
+    bodies = [json.loads(c[6:]) for c in chunks[:-1]]
+    text = "".join(b["choices"][0]["delta"].get("content", "") for b in bodies)
+    assert text.strip() == "पहला वाक्य। Second one." and bodies[-1]["choices"][0]["finish_reason"] == "stop"
+
+
+@pytest.fixture
+def phone(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "UPLOADS", tmp_path / "uploads")
+
+    async def fake_fetch(_settings, mobile):
+        return API_DATA if mobile == "9810000000" else None
+
+    monkeypatch.setattr(rentbasket, "fetch", fake_fetch)
+    settings = Settings(database_url=f"sqlite:///{(tmp_path / 'p.db').as_posix()}", whatsapp_mode="dry_run",
+                        public_base_url="http://test", fixfirst_llm_key="ff_test")
+    llm = ScriptedLLM([])
+    app = server.create_app(settings, llm_factory=lambda: llm)
+    with TestClient(app) as c:
+        c.llm = llm
+        yield c
+
+
+AUTH = {"Authorization": "Bearer ff_test"}
+SYSTEM = "FIXFIRST_CALL call_ref=exec-1 from=+919810000000 to=+918000000000 customer_phone={customer_phone}"
+
+
+def _body(*turns, stream=True):
+    msgs = [{"role": "system", "content": SYSTEM}, {"role": "assistant", "content": "नमस्ते! बताइए, क्या problem है?"}]
+    for i, t in enumerate(turns):
+        msgs.append({"role": "user" if i % 2 == 0 else "assistant", "content": t})
+    return {"model": "fixfirst", "messages": msgs, "stream": stream}
+
+
+def _spoken(resp) -> str:
+    out = []
+    for line in resp.text.splitlines():
+        if line.startswith("data: {"):
+            out.append(json.loads(line[6:])["choices"][0]["delta"].get("content", ""))
+    return "".join(out).strip()
+
+
+def test_bolna_needs_our_key(phone):
+    assert phone.post("/bolna/v1/chat/completions", json=_body("hello")).status_code == 401
+    assert phone.get("/bolna/v1/models", headers=AUTH).json()["data"][0]["id"] == "fixfirst"
+
+
+def test_bolna_turns_feed_only_new_words_to_the_brain(phone):
+    phone.llm.responses.extend([
+        LLMResult(tool_calls=[call("say", text="Kaunsa appliance?", language="hi")]),
+        LLMResult(tool_calls=[call("say", text="Theek hai.", language="hi")]),
+    ])
+    r = phone.post("/bolna/v1/chat/completions", json=_body("mera ek appliance kharab hai"), headers=AUTH)
+    assert r.status_code == 200 and _spoken(r) == "Kaunsa appliance?"
+    # The caller was found through the RentBasket API and copied into the local customers.
+    assert any(c["name"] == "Test Customer" for c in phone.get("/api/customers").json())
+    r = phone.post("/bolna/v1/chat/completions", json=_body("mera ek appliance kharab hai", "Kaunsa appliance?", "TV"),
+                   headers=AUTH)
+    assert _spoken(r) == "Theek hai."
+    last_user = phone.llm.requests[-1]["messages"][-1]
+    assert last_user == {"role": "user", "content": "TV"}   # not the whole Bolna history again
+    # A repeat request with no new caller words gets the last reply again, without another model call.
+    n = len(phone.llm.requests)
+    r = phone.post("/bolna/v1/chat/completions", json=_body("mera ek appliance kharab hai", "Kaunsa appliance?", "TV"),
+                   headers=AUTH)
+    assert _spoken(r) == "Theek hai." and len(phone.llm.requests) == n
+
+
+def test_bolna_hazard_and_hangup_webhook(phone):
+    r = phone.post("/bolna/v1/chat/completions", json=_body("gas ki smell aa rahi hai kitchen mein"), headers=AUTH)
+    assert "1906" in _spoken(r)
+    assert phone.post("/bolna/webhook?key=wrong", json={"id": "exec-1", "status": "completed"}).status_code == 401
+    r = phone.post("/bolna/webhook?key=ff_test", json={"id": "exec-1", "status": "completed",
+                                                        "telephony_data": {"recording_url": "https://rec/1.mp3"}})
+    assert r.json()["status"] == "completed"
+    call_row = phone.get("/api/calls").json()[0]
+    assert call_row["hazard"] == "gas" and call_row["channel"] == "phone"
+
+
+def test_bolna_side_checks_are_not_conversation_turns(phone):
+    body = {"model": "fixfirst", "stream": False,
+            "messages": [{"role": "system", "content": "Decide if the call should end."}, {"role": "user", "content": "bye"}]}
+    r = phone.post("/bolna/v1/chat/completions", json=body, headers=AUTH)
+    assert r.json()["choices"][0]["message"]["content"] == "" and not phone.llm.requests
+
+
+def test_lookup_by_phone_on_the_call_page(phone):
+    c = phone.post("/api/customers/lookup", json={"phone": "98100 00000"}).json()
+    assert c["name"] == "Test Customer" and {r["appliance"] for r in c["rentals"]} >= {"tv", "fridge", "ac", "washer", "furniture"}
+    assert phone.post("/api/customers/lookup", json={"phone": "9999999999"}).status_code == 404

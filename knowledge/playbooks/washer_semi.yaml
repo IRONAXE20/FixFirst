@@ -1,0 +1,160 @@
+# Semi-automatic washing machine (separate wash tub and spin tub, timer knobs, drain selector).
+# RentBasket rents these alongside fully automatic machines; the complaint log has "water drum me
+# ruk nahi raha", "machine does not rotate", noise/imbalance and pipe leaks.
+# Semi-automatics often stand in bathrooms, so the safety check asks about water near the plug.
+id: washer_semi_problem
+appliance: washer_semi
+title: {en: "Semi-automatic washing machine problem", hi: "Semi-automatic washing machine की problem"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "Before we start, a quick safety check. Is there water near the machine's plug or socket, or any burning smell, sparks, or a tingle when you touch the machine?"
+      hi: "शुरू करने से पहले एक छोटा safety check. क्या machine के plug या socket के पास पानी है, या कोई जलने की smell, चिंगारी, या machine छूने पर हल्का current लगता है?"
+    outcomes:
+      no_hazard: {next: triage, label: "Nothing like that"}
+      hazard_water: {hazard: water_electric, label: "Water near the plug, socket or wiring"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, sparks or smoke"}
+      hazard_shock: {hazard: electrical, label: "Tingle or shock from the machine"}
+    sources: [fixfirst_policy]
+
+  triage:
+    say:
+      en: "What's happening: the wash tub isn't running, water won't stay in the wash tub, water won't drain out, the spin tub isn't spinning, or it's leaking or making a noise?"
+      hi: "क्या हो रहा है: wash tub चल नहीं रहा, wash tub में पानी रुक नहीं रहा, पानी बाहर नहीं निकल रहा, spin tub नहीं घूम रहा, या leak हो रहा है या आवाज़ आ रही है?"
+    outcomes:
+      wash_not_running: {next: sa_wash_timer, label: "Wash tub doesn't run"}
+      water_not_staying: {next: sa_selector_wash, label: "Water drains out while washing / won't stay in the tub"}
+      not_draining: {next: sa_selector_drain, label: "Water won't drain from the wash tub"}
+      spin_not_working: {next: sa_spin_lid, label: "Spin tub doesn't spin"}
+      leaking: {next: sa_leak, label: "Leaking water"}
+      noise: {next: sa_noise, label: "Loud noise or shaking"}
+    sources: [samsung_in_semi_drain]
+
+  sa_wash_timer:
+    say:
+      en: "A semi-automatic machine runs only while its wash timer is turned. Please check the plug and wall switch are on, then turn the wash timer knob to about five minutes. Does the wash tub start?"
+      hi: "Semi-automatic machine तभी चलती है जब उसका wash timer घुमाया हो। कृपया check कीजिए कि plug और wall switch on हैं, फिर wash timer knob को लगभग पाँच minute पर घुमाइए। क्या wash tub चलने लगा?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it runs now"}
+      hums_no_turn: {next: esc_wash_motor, label: "It hums but the tub doesn't turn"}
+      dead: {next: esc_no_power, label: "Nothing happens at all"}
+    sources: [samsung_in_semi_drain]
+
+  sa_selector_wash:
+    say:
+      en: "There's a knob called the drain selector, usually marked Wash and Drain. If it's on Drain, the water runs out while washing. Please turn it to Wash and fill the water again. Does the water stay in now?"
+      hi: "Machine पर एक knob होता है, drain selector, जिस पर आमतौर पर Wash और Drain लिखा होता है। अगर वो Drain पर है, तो धुलाई के दौरान पानी निकल जाता है। कृपया उसे Wash पर कीजिए और फिर से पानी भरिए। क्या अब पानी रुक रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Water stays in now"}
+      still_draining: {next: esc_drain_valve, label: "Selector is on Wash but water still runs out"}
+    sources: [samsung_in_semi_drain]
+
+  sa_selector_drain:
+    say:
+      en: "To drain, the drain selector must be on Drain, and the drain pipe should be lying down towards the floor drain, not hooked up high, bent or squashed. Please check both. Is the water draining now?"
+      hi: "पानी निकालने के लिए drain selector Drain पर होना चाहिए, और drain pipe नीचे नाली की तरफ़ होना चाहिए, ऊपर टँगा, मुड़ा या दबा हुआ नहीं। कृपया दोनों check कीजिए। क्या अब पानी निकल रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Water is draining now"}
+      not_fixed: {next: sa_lint_filter, label: "Still not draining"}
+    sources: [samsung_in_semi_drain, lg_in_not_spinning]
+
+  sa_lint_filter:
+    say:
+      en: "Many semi-automatic machines have a small lint filter inside the wash tub that catches fluff, coins and hairpins. If yours has one, pull it out, rinse it under a tap, and push it back in. Is it draining now?"
+      hi: "कई semi-automatic machines में wash tub के अंदर एक छोटा lint filter होता है जो रोएँ, सिक्के और hairpin रोकता है। अगर आपकी machine में है, तो उसे निकालकर नल के नीचे धो लीजिए और वापस लगा दीजिए। क्या अब पानी निकल रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Draining now"}
+      not_fixed: {next: esc_not_draining, label: "Still not draining / no filter"}
+    sources: [lg_in_not_spinning]
+
+  sa_spin_lid:
+    say:
+      en: "The spin tub only spins when the small safety cap is pressed down on top of the clothes and the spin lid is fully closed. Please check both, then turn the spin timer. Does it spin now?"
+      hi: "Spin tub तभी घूमता है जब कपड़ों के ऊपर छोटा safety cap दबाकर रखा हो और spin का ढक्कन पूरा बंद हो। कृपया दोनों check कीजिए, फिर spin timer घुमाइए। क्या अब spin हो रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, spinning now"}
+      not_fixed: {next: sa_spin_load, label: "Still not spinning"}
+    sources: [samsung_in_semi_drain]
+
+  sa_spin_load:
+    say:
+      en: "Too many clothes, or clothes piled on one side, can stop the spin, and sometimes a cloth gets stuck in the gap between the spin tub and the body. Please take out a few clothes, spread the rest evenly, and check that gap. Does it spin now?"
+      hi: "ज़्यादा कपड़े, या एक तरफ़ जमा कपड़े, spin रोक सकते हैं, और कभी-कभी कोई कपड़ा spin tub और machine के बीच की जगह में फँस जाता है। कुछ कपड़े निकालिए, बाकी बराबर फैलाइए, और वो जगह check कीजिए। क्या अब spin हो रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Spinning now"}
+      not_fixed: {next: esc_spin, label: "Still not spinning"}
+    sources: [samsung_in_semi_drain, lg_in_not_spinning]
+
+  sa_leak:
+    say:
+      en: "Where is the water coming from: the drain pipe, the inlet pipe from the tap, or from under the machine?"
+      hi: "पानी कहाँ से आ रहा है: drain pipe से, tap से आने वाले pipe से, या machine के नीचे से?"
+    outcomes:
+      drain_pipe: {next: esc_leak_hose, label: "Drain pipe is cracked or leaking"}
+      inlet_pipe: {next: sa_close_tap, label: "Inlet pipe / tap joint"}
+      under_machine: {next: esc_leak, label: "From under the machine"}
+    sources: [samsung_wm_leak]
+
+  sa_close_tap:
+    say:
+      en: "Please close the tap and tighten the pipe's connector at the tap by hand only, no tools. Open the tap again. Is it still leaking?"
+      hi: "कृपया tap बंद कीजिए और tap पर लगे pipe के connector को सिर्फ़ हाथ से कसिए, किसी tool से नहीं। फिर tap खोलिए। क्या अभी भी leak हो रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Leak stopped"}
+      not_fixed: {next: esc_leak_hose, label: "Still leaking, or the pipe is broken"}
+    sources: [samsung_wm_leak]
+
+  sa_noise:
+    say:
+      en: "Shaking and noise usually come from clothes piled on one side in the spin tub, or the machine not standing flat. Please spread the clothes evenly, and check the machine doesn't rock on the floor. Is it better now?"
+      hi: "हिलना और आवाज़ आमतौर पर spin tub में एक तरफ़ जमा कपड़ों से, या machine के समतल न खड़े होने से होती है। कृपया कपड़े बराबर फैलाइए, और देखिए machine फ़र्श पर हिलती तो नहीं। क्या अब ठीक है?"
+    outcomes:
+      fixed: {next: resolved, label: "Noise stopped"}
+      not_fixed: {next: esc_noise, label: "Still noisy or shaking"}
+    sources: [lg_in_not_spinning]
+
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "That's great, the machine is working again!"
+      hi: "बहुत बढ़िया, machine फिर से चल रही है!"
+  esc_no_power:
+    kind: escalate
+    likely_cause: "Semi-automatic washer completely dead"
+    technician_note: "Check supply, timer and wiring"
+  esc_wash_motor:
+    kind: escalate
+    likely_cause: "Wash motor hums but the pulsator doesn't turn: capacitor, belt or motor"
+    technician_note: "Check wash capacitor, belt and pulsator"
+  esc_drain_valve:
+    kind: escalate
+    likely_cause: "Water drains out with the selector on Wash: drain valve or seal"
+    technician_note: "Check drain valve and drain seal"
+  esc_not_draining:
+    kind: escalate
+    likely_cause: "Wash tub won't drain with selector on Drain and hose clear: blocked drain path or valve"
+    technician_note: "Clear drain path; check drain valve"
+  esc_spin:
+    kind: escalate
+    likely_cause: "Spin tub won't spin with lid closed and load balanced: lid switch, brake, capacitor or spin motor"
+    technician_note: "Check spin lid switch, brake, capacitor and spin motor"
+  esc_leak_hose:
+    kind: escalate
+    likely_cause: "Leaking or broken drain/inlet pipe"
+    technician_note: "Carry drain and inlet pipes"
+  esc_leak:
+    kind: escalate
+    say:
+      en: "Until the technician comes, please don't use the machine, and keep the floor near the plug dry."
+      hi: "Technician के आने तक कृपया machine मत चलाइए, और plug के पास का फ़र्श सूखा रखिए।"
+    likely_cause: "Water leaking from under the semi-automatic machine: tub or seal"
+    technician_note: "Check tub seals and drain valve"
+  esc_noise:
+    kind: escalate
+    likely_cause: "Loud noise or shaking with balanced load on a level floor"
+    technician_note: "Check spin tub mounting, springs and motor"

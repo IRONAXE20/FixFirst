@@ -1,0 +1,130 @@
+# Geyser / water heater. RentBasket's catalogue doesn't list geysers today; this starter
+# playbook is here because the FixFirst brief covers them (and other service companies do).
+# The customer never opens the geyser cover or presses an internal reset: that's a technician job.
+id: geyser_no_hot_water
+appliance: geyser
+title: {en: "Geyser not heating", hi: "Geyser गरम पानी नहीं दे रहा"}
+status: draft-unreviewed
+reviewed_by: null
+entry: geyser_type
+triage_node: triage
+nodes:
+  geyser_type:
+    say:
+      en: "Is it an electric geyser, with a switch on the wall, or a gas geyser connected to a cylinder?"
+      hi: "क्या ये electric geyser है, जिसका switch दीवार पर होता है, या gas geyser जो cylinder से जुड़ा है?"
+    outcomes:
+      electric: {next: safety_check, label: "Electric"}
+      gas: {next: esc_gas_geyser, label: "Gas geyser"}
+    sources: [fixfirst_policy]
+
+  safety_check:
+    say:
+      en: "A quick safety check. Is there any water leaking near the geyser's switch or wires, or do you feel any tingling or shock from the taps or shower?"
+      hi: "एक छोटा safety check. क्या geyser के switch या तारों के पास पानी leak हो रहा है, या taps या shower छूने पर हल्का current या झटका महसूस होता है?"
+    outcomes:
+      no_hazard: {next: triage, label: "Nothing like that"}
+      water_near_switch: {hazard: water_electric, label: "Water near the switch or wires"}
+      shock: {hazard: electrical, label: "Tingling or shock from taps or shower"}
+    sources: [fixfirst_policy]
+
+  triage:
+    say:
+      en: "Is the geyser not turning on at all, or is it on but the water isn't getting hot? Or is it leaking or making a noise?"
+      hi: "क्या geyser बिल्कुल on नहीं हो रहा, या on है पर पानी गरम नहीं हो रहा? या leak हो रहा है या आवाज़ आ रही है?"
+    outcomes:
+      no_hot_water: {next: gz_power, label: "No hot water"}
+      not_turning_on: {next: gz_power, label: "Doesn't turn on"}
+      leaking: {next: esc_leak, label: "Leaking"}
+      noise: {next: esc_noise, label: "Noise"}
+
+  gz_power:
+    say:
+      en: "Please check the geyser's wall switch is on. Does the small indicator light on the geyser glow?"
+      hi: "कृपया geyser का wall switch on है, ये check कीजिए। क्या geyser पर लगी छोटी indicator light जल रही है?"
+    outcomes:
+      light_off: {next: gz_mcb, label: "Indicator light is off"}
+      light_on: {next: gz_wait, label: "Indicator light is on"}
+    sources: [racold_instant]
+
+  gz_mcb:
+    say:
+      en: "Let's check the main switch board, the box with a row of small switches. Only with dry hands, please. Is any switch pointing down? If so, push it up once; if it falls again, leave it off. Does the geyser light come on now?"
+      hi: "अब main switch board check करते हैं, वो box जिसमें छोटे switches की line होती है। सिर्फ सूखे हाथों से कीजिए। क्या कोई switch नीचे है? अगर हाँ, तो उसे एक बार ऊपर कीजिए; अगर फिर गिर जाए तो छोड़ दीजिए। क्या अब geyser की light जली?"
+    outcomes:
+      fixed: {next: gz_wait, label: "Light is on now"}
+      trips_again: {next: esc_mcb_trip, label: "The switch fell down again"}
+      not_fixed: {next: esc_no_power, label: "All switches up / light still off"}
+
+  gz_wait:
+    say:
+      en: "A storage geyser usually takes fifteen to thirty minutes to heat, depending on its size. How long has it been switched on?"
+      hi: "Storage geyser को गरम होने में आमतौर पर उसके size के हिसाब से पंद्रह से तीस मिनट लगते हैं। इसे on हुए कितनी देर हुई है?"
+    outcomes:
+      not_long: {next: followup, label: "Less than about 20 minutes"}
+      long_enough: {next: gz_knob, label: "30 minutes or more"}
+    sources: [racold_instant]
+
+  gz_knob:
+    say:
+      en: "Some geysers have a temperature knob on the front. If yours has one, is it turned towards the hot or high side?"
+      hi: "कुछ geysers में आगे एक temperature knob होता है। अगर आपके में है, तो क्या वो hot या high की तरफ घूमा है?"
+    outcomes:
+      was_low: {next: followup, label: "It was low; turned it up"}
+      ok_or_none: {next: gz_tap, label: "Already high, or there's no knob"}
+    sources: [racold_instant]
+
+  gz_tap:
+    say:
+      en: "Are you using the hot water tap, or a mixer turned fully to the hot side?"
+      hi: "क्या आप गरम पानी वाला tap इस्तेमाल कर रहे हैं, या mixer पूरा hot की तरफ घूमा है?"
+    outcomes:
+      fixed: {next: resolved, label: "It was the wrong tap or mixer position; hot water now"}
+      ok: {next: esc_heating, label: "Correct tap, still cold"}
+
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "That's great, you have hot water again!"
+      hi: "बहुत बढ़िया, अब गरम पानी आ रहा है!"
+  followup:
+    kind: followup
+    followup_minutes: 30
+    say:
+      en: "Let's give it about thirty minutes to heat. I'll message you on WhatsApp then; if the water is still cold, just reply and I'll book a technician."
+      hi: "इसे गरम होने के लिए लगभग तीस मिनट दीजिए। मैं तब WhatsApp पर message करूँगी; अगर पानी तब भी ठंडा हो, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  esc_gas_geyser:
+    kind: escalate
+    say:
+      en: "Gas geysers need a trained technician, so I won't ask you to adjust anything. If you ever smell gas, don't touch any switch, close the cylinder regulator, open the windows and go outside."
+      hi: "Gas geyser के लिए trained technician चाहिए, इसलिए मैं आपसे कुछ भी adjust करने को नहीं कहूँगी। अगर कभी gas की smell आए, तो कोई switch मत छुइए, cylinder का regulator बंद कीजिए, खिड़कियाँ खोलिए और बाहर चले जाइए।"
+    likely_cause: "Gas geyser not heating"
+    technician_note: "Gas-certified technician; check burner, ignition and venting"
+  esc_mcb_trip:
+    kind: escalate
+    say:
+      en: "Please keep that switch off and don't use the geyser until our technician checks it."
+      hi: "कृपया वो switch बंद ही रहने दीजिए और technician के check करने तक geyser मत चलाइए।"
+    likely_cause: "Geyser trips the MCB: likely element or wiring fault"
+    technician_note: "Element insulation test"
+  esc_no_power:
+    kind: escalate
+    likely_cause: "Geyser gets no power with switch and MCB on"
+    technician_note: "Check socket, wiring and internal cut-out"
+  esc_heating:
+    kind: escalate
+    likely_cause: "Indicator on but no heating after 30+ minutes: element, thermostat or safety cut-out"
+    technician_note: "Carry element and thermostat; customer told not to open the cover"
+    sources: [racold_instant]
+  esc_leak:
+    kind: escalate
+    say:
+      en: "Please don't use the geyser. If its switch and the floor are dry, switch it off at the wall; if not, leave it, and keep away from the water."
+      hi: "कृपया geyser मत चलाइए। अगर उसका switch और फ़र्श सूखे हैं, तो wall switch से बंद कर दीजिए; अगर नहीं, तो रहने दीजिए और पानी से दूर रहिए।"
+    likely_cause: "Geyser leaking: valve, inlet joint or tank"
+    technician_note: "Check pressure relief valve and tank"
+  esc_noise:
+    kind: escalate
+    likely_cause: "Geyser noise: possible scale build-up"
+    technician_note: "Descale and inspect element"

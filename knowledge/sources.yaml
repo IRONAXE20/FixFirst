@@ -1,0 +1,117 @@
+# Where each playbook step comes from. Steps are paraphrased (never copied) from these
+# pages; `official` marks manufacturer sources. Retrieved October 2026.
+lg_in_wm_codes:
+  title: LG India — Washing machine error codes explained
+  url: https://www.lg.com/in/magazine/lg-washing-machine-error-codes-explained/
+  publisher: LG Electronics India
+  official: true
+samsung_in_4c_5c:
+  title: Samsung India — How to resolve 4C or 5C error codes on your washing machine
+  url: https://www.samsung.com/in/support/home-appliances/how-to-resolve-4e-or-5e-codes-on-your-samsung-washing-machine/
+  publisher: Samsung India
+  official: true
+samsung_us_wm_codes:
+  title: Samsung US — Washing machine information and error codes
+  url: https://www.samsung.com/us/support/troubleshoot/TSG10000997/
+  publisher: Samsung Electronics America
+  official: true
+daikin_in_troubleshooting:
+  title: Daikin India — Troubleshooting (check before calling for service)
+  url: https://www.daikinindia.com/node/32834
+  publisher: Daikin Airconditioning India
+  official: true
+lg_split_ac_codes:
+  title: LG — Single / Multi-split air conditioner error codes
+  url: https://www.lg.com/ca_en/support/product-support/troubleshoot/help-library/cs-CT30000386-20153289364119/
+  publisher: LG Electronics
+  official: true
+samsung_uk_fridge:
+  title: Samsung UK — My Samsung fridge isn't cooling
+  url: https://www.samsung.com/uk/support/home-appliances/my-samsung-fridge-isnt-cooling/
+  publisher: Samsung UK
+  official: true
+samsung_us_fridge:
+  title: Samsung US — Cooling issues with Samsung refrigerator or freezer
+  url: https://www.samsung.com/us/support/troubleshoot/TSG10003479/
+  publisher: Samsung Electronics America
+  official: true
+samsung_bd_direct_cool:
+  title: Samsung Bangladesh — Low cooling on a direct cool refrigerator
+  url: https://www.samsung.com/bd/support/home-appliances/how-to-troubleshoot-low-cooling-on-a-samsung-direct-cool-refrigerator
+  publisher: Samsung Bangladesh
+  official: true
+racold_instant:
+  title: Racold — Heating and safety in electric instant geysers
+  url: https://www.racold.com/blog/electric-instant-water-heater/best-in-class-heating-and-safety-with-racold-electric-instant-geysers
+  publisher: Racold (Ariston Thermo India)
+  official: true
+rentbasket_faq:
+  title: RentBasket — FAQs (maintenance and service requests)
+  url: https://rentbasket.com/faqs
+  publisher: RentBasket
+  official: true
+fixfirst_policy:
+  title: FixFirst safety policy (draft, needs technician + legal sign-off)
+  url: knowledge/safety/hazards.yaml
+  publisher: FixFirst
+  official: false
+samsung_in_fridge_leak:
+  title: Samsung India — How to address water leakage from your Samsung refrigerator
+  url: https://www.samsung.com/in/support/home-appliances/how-to-address-water-leakage-from-your-samsung-refrigerator/
+  publisher: Samsung India
+  official: true
+samsung_in_fridge_noise:
+  title: Samsung India — Why there is an 'Abnormal noise' from the refrigerator
+  url: https://www.samsung.com/in/support/home-appliances/why-there-is-an-abnormal-noise-from-the-refrigerator/
+  publisher: Samsung India
+  official: true
+samsung_in_semi_drain:
+  title: Samsung Newsroom India — DIY - How to resolve water-draining issue in your Samsung semi-automatic washing machine
+  url: https://news.samsung.com/in/diy-how-to-resolve-water-draining-issue-in-your-samsung-semi-automatic-washing-machine
+  publisher: Samsung India
+  official: true
+lg_in_not_spinning:
+  title: LG India — Why is my LG washing machine not spinning
+  url: https://www.lg.com/in/magazine/why-is-my-lg-washing-machine-not-spinning/
+  publisher: LG Electronics India
+  official: true
+samsung_wm_leak:
+  title: Samsung UAE — What to do if your washing machine leaks
+  url: https://www.samsung.com/ae/support/home-appliances/what-to-do-if-your-washing-machine-leaks/
+  publisher: Samsung Gulf
+  official: true
+luminous_battery_water:
+  title: Luminous — Inverter battery water - everything you need to know
+  url: https://www.luminousindia.com/blogs/inverter-battery-water-everything-you-need-know
+  publisher: Luminous Power Technologies
+  official: true
+luminous_battery_care:
+  title: Luminous — Inverter battery maintenance guide
+  url: https://www.luminousindia.com/blogs/inverter-battery-maintenance-guide-tips-longer-life
+  publisher: Luminous Power Technologies
+  official: true
+samsung_tv_no_power:
+  title: Samsung UAE — How to troubleshoot a Samsung TV that will not turn on
+  url: https://www.samsung.com/ae/support/tv-audio-video/how-to-troubleshoot-the-samsung-tv-that-will-not-turn-on/
+  publisher: Samsung Gulf
+  official: true
+samsung_tv_black_screen:
+  title: Samsung Levant — Samsung TV powers on but displays a black screen
+  url: https://www.samsung.com/levant/support/tv-audio-video/samsung-tv-powers-on-but-displays-a-black-screen/
+  publisher: Samsung Levant
+  official: true
+nobroker_water_purifier:
+  title: NoBroker — Water purifier not working - common causes and fixes (third-party; no official RO maker page found)
+  url: https://www.nobroker.in/appliance-services/guides/water-purifier-not-working/
+  publisher: NoBroker
+  official: false
+pmuy_lpg_guidance:
+  title: PMUY (Government of India) — LPG consumer guidance
+  url: https://pmuy.gov.in/docs/Consumer_Guidance.pdf
+  publisher: Ministry of Petroleum and Natural Gas
+  official: true
+hunker_yellow_flame:
+  title: Hunker — Why is my gas stove burning yellow (third-party; no official Indian page found)
+  url: https://www.hunker.com/1968708/why-is-my-gas-stove-burning-yellow/
+  publisher: Hunker
+  official: false

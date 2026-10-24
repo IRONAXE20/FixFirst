@@ -1,0 +1,44 @@
+# Render Blueprint: one always-on web service. Bolna calls /bolna/v1/chat/completions on it for every
+# caller turn, so it must not sleep (the free plan spins down after 15 idle minutes and takes ~1 minute
+# to wake, which would drop the first turn of a call).
+#
+# Secrets are `sync: false`: Render asks for them when the Blueprint is created; they never live in git.
+# FIXFIRST_LLM_KEY must be the same value as in your local .env, because `bolna-setup` (run locally)
+# registers that key with Bolna.
+services:
+  - type: web
+    name: fixfirst
+    runtime: python
+    region: singapore
+    plan: starter
+    buildCommand: pip install -r requirements-render.txt
+    startCommand: python -m fixfirst serve --host 0.0.0.0
+    healthCheckPath: /api/config
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.5"
+      - key: LLM_PROVIDER
+        value: auto
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-5-5
+      - key: CUSTOMER_SOURCE
+        value: rentbasket
+      - key: WHATSAPP_MODE
+        value: dry_run
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        value: "678441112018307"
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        value: "2070784403431954"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: BOLNA_API_KEY
+        sync: false
+      - key: FIXFIRST_LLM_KEY
+        sync: false
+      - key: BOLNA_AGENT_ID
+        sync: false
+      - key: WHATSAPP_TOKEN
+        sync: false

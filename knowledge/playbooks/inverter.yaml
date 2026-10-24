@@ -1,0 +1,121 @@
+# Inverter with battery: low backup, no backup during a power cut, beeping.
+# The customer never opens the battery caps or tops up water: a swollen, leaking or hot battery
+# is a hazard, and topping up is a technician job (distilled water only, to the marked level).
+id: inverter_problem
+appliance: inverter
+title: {en: "Inverter or battery problem", hi: "Inverter या battery की problem"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "First, a quick safety check. Is the battery swollen, leaking any liquid, very hot to touch, or giving a rotten-egg or burning smell? Any sparks near the inverter or its wires?"
+      hi: "पहले एक छोटा safety check. क्या battery फूली हुई है, उससे कोई liquid निकल रहा है, छूने पर बहुत गरम है, या सड़े अंडे जैसी या जलने की smell आ रही है? Inverter या उसके तारों के पास कोई चिंगारी?"
+    outcomes:
+      no_hazard: {next: triage, label: "Nothing like that"}
+      hazard_battery: {hazard: battery, label: "Battery swollen, leaking, hot or smelly"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, sparks or smoke"}
+    sources: [fixfirst_policy, luminous_battery_water]
+
+  triage:
+    say:
+      en: "What's the problem: the backup lasts much less than before, the inverter doesn't give power at all during a power cut, or it keeps beeping?"
+      hi: "क्या problem है: backup पहले से बहुत कम चल रहा है, power cut में inverter बिल्कुल बिजली नहीं दे रहा, या वो बार-बार beep कर रहा है?"
+    outcomes:
+      low_backup: {next: inv_load, label: "Backup is low / runs out quickly"}
+      no_backup: {next: inv_switch, label: "No power from the inverter during a cut"}
+      beeping: {next: inv_beep, label: "Keeps beeping or shows a warning"}
+    sources: [luminous_battery_care]
+
+  inv_load:
+    say:
+      en: "During a power cut, what runs on the inverter? Heavy things like an iron, geyser, AC, cooler, microwave or washing machine drain the battery very fast. Are any of these running on it?"
+      hi: "Power cut के समय inverter पर क्या-क्या चलता है? Iron, geyser, AC, cooler, microwave या washing machine जैसी भारी चीज़ें battery बहुत जल्दी खत्म कर देती हैं। क्या इनमें से कुछ inverter पर चल रहा है?"
+    outcomes:
+      heavy_load: {next: resolved_load, label: "Yes, heavy appliances run on it"}
+      light_load: {next: inv_water, label: "Only lights, fans, TV or Wi-Fi"}
+    sources: [luminous_battery_care]
+
+  inv_water:
+    say:
+      en: "Please look at the top of the battery without opening anything. Many batteries have small float indicators that show red or a mark when the water is low. Does any indicator show the water is low?"
+      hi: "कृपया battery के ऊपर देखिए, कुछ भी खोले बिना। कई batteries में छोटे float indicator होते हैं जो पानी कम होने पर लाल रंग या निशान दिखाते हैं। क्या कोई indicator पानी कम दिखा रहा है?"
+    help:
+      en: "The indicators are small round windows or plastic buttons on top of the battery. Green or white usually means fine; red or sunk down means the water is low."
+      hi: "Indicator battery के ऊपर छोटी गोल खिड़की या plastic button जैसे होते हैं। हरा या सफ़ेद आमतौर पर ठीक होता है; लाल या नीचे धँसा हुआ मतलब पानी कम है।"
+    outcomes:
+      water_low: {next: esc_battery_water, label: "An indicator shows low water"}
+      water_ok: {next: inv_charge, label: "Indicators look fine / no indicators"}
+    sources: [luminous_battery_water]
+
+  inv_charge:
+    say:
+      en: "After the power comes back, the battery needs many hours of electricity to charge fully. Have there been long or repeated power cuts in the last day or two, without many hours of power in between?"
+      hi: "बिजली वापस आने के बाद battery को पूरा charge होने में कई घंटे लगते हैं। क्या पिछले एक-दो दिन में लंबे या बार-बार power cut हुए हैं, बीच में ज़्यादा घंटे बिजली आए बिना?"
+    outcomes:
+      many_cuts: {next: inv_wait_charge, label: "Yes, many cuts recently"}
+      normal_supply: {next: esc_low_backup, label: "No, power has been normal"}
+    sources: [luminous_battery_care]
+
+  inv_switch:
+    say:
+      en: "Is the inverter's display or light on? Please check its plug is fully in the wall socket and the switch on the front of the inverter is on."
+      hi: "क्या inverter की display या light जल रही है? कृपया check कीजिए कि उसका plug wall socket में पूरा लगा है और inverter के आगे वाला switch on है।"
+    outcomes:
+      was_off: {next: resolved, label: "It was switched off or unplugged; fixed now"}
+      display_on: {next: esc_no_backup, label: "Display is on but no backup during the cut"}
+      display_off: {next: esc_inverter_dead, label: "Inverter shows nothing at all"}
+    sources: [luminous_battery_care]
+
+  inv_beep:
+    say:
+      en: "A beep during a power cut often means overload or a low battery. Please switch off heavy appliances like an iron, AC, cooler or microwave. Does the beeping stop?"
+      hi: "Power cut में beep आमतौर पर overload या कम battery का signal होता है। कृपया iron, AC, cooler या microwave जैसी भारी चीज़ें बंद कीजिए। क्या beep बंद हुई?"
+    outcomes:
+      fixed: {next: resolved_load, label: "Beeping stopped"}
+      not_fixed: {next: esc_inverter_alarm, label: "Still beeping"}
+    sources: [luminous_battery_care]
+
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "That's great, the inverter is working again!"
+      hi: "बहुत बढ़िया, inverter फिर से काम कर रहा है!"
+  resolved_load:
+    kind: resolve
+    resolution: no_fault_overload
+    say:
+      en: "That's the reason. During power cuts, please run only lights, fans, the TV and Wi-Fi on the inverter, and keep heavy appliances off. If the backup is still short with only those, just call us and we'll check the battery."
+      hi: "वजह यही है। Power cut में inverter पर सिर्फ़ lights, fans, TV और Wi-Fi चलाइए, और भारी चीज़ें बंद रखिए। अगर इनके साथ भी backup कम चले, तो हमें call कीजिए, हम battery check करवा देंगे।"
+  inv_wait_charge:
+    kind: followup
+    followup_minutes: 1440
+    say:
+      en: "Then the battery probably hasn't had time to charge. Give it about a day of normal power. I'll check with you on WhatsApp tomorrow; if the backup is still low, just reply and I'll book a technician."
+      hi: "तो शायद battery को charge होने का समय नहीं मिला। उसे लगभग एक दिन normal बिजली मिलने दीजिए। मैं कल WhatsApp पर पूछूँगी; अगर backup तब भी कम हो, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  esc_battery_water:
+    kind: escalate
+    say:
+      en: "Please don't open the battery caps or add water yourself; our technician will top it up with the right water."
+      hi: "कृपया battery के ढक्कन खुद मत खोलिए और पानी मत डालिए; हमारे technician सही पानी से उसे भर देंगे।"
+    likely_cause: "Battery water low"
+    technician_note: "Top up with distilled water to the marked level; check specific gravity and terminals"
+  esc_low_backup:
+    kind: escalate
+    likely_cause: "Low backup with light load, normal water level and normal supply: battery ageing or charging fault"
+    technician_note: "Battery health test; check charging current and terminals"
+  esc_no_backup:
+    kind: escalate
+    likely_cause: "Inverter on but no output during a power cut: changeover, battery or wiring"
+    technician_note: "Check battery connection, changeover and output wiring"
+  esc_inverter_dead:
+    kind: escalate
+    likely_cause: "Inverter completely dead"
+    technician_note: "Check inverter fuse, battery connection and board"
+  esc_inverter_alarm:
+    kind: escalate
+    likely_cause: "Inverter keeps beeping with heavy loads off"
+    technician_note: "Read the alarm/fault indication; battery test"

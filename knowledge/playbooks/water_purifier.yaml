@@ -1,0 +1,104 @@
+# RO / UV water purifier: no water, slow water, leaking, taste or smell.
+# No official RO maker troubleshooting page was found; the steps are limited to supply, power
+# and restart checks a customer can do safely, and everything else goes to a technician.
+id: water_purifier_problem
+appliance: water_purifier
+title: {en: "Water purifier problem", hi: "Water purifier की problem"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "First, a quick safety check. Is any water leaking near the purifier's plug, socket or adaptor, or is there a burning smell?"
+      hi: "पहले एक छोटा safety check. क्या purifier के plug, socket या adaptor के पास पानी leak हो रहा है, या कोई जलने की smell आ रही है?"
+    outcomes:
+      no_hazard: {next: triage, label: "Nothing like that"}
+      hazard_water: {hazard: water_electric, label: "Water near the plug, socket or adaptor"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, sparks or smoke"}
+    sources: [fixfirst_policy]
+
+  triage:
+    say:
+      en: "What's the problem: no water is coming at all, water is coming very slowly, the purifier is leaking, or the water tastes or smells different?"
+      hi: "क्या problem है: बिल्कुल पानी नहीं आ रहा, बहुत धीरे आ रहा है, purifier से पानी leak हो रहा है, या पानी का स्वाद या smell अलग लग रहा है?"
+    outcomes:
+      no_water: {next: wp_power, label: "No water at all"}
+      slow_water: {next: wp_inlet, label: "Water comes very slowly"}
+      leaking: {next: wp_leak, label: "Purifier is leaking"}
+      taste_smell: {next: esc_taste, label: "Water tastes or smells different"}
+    sources: [nobroker_water_purifier]
+
+  wp_power:
+    say:
+      en: "Are the purifier's lights on? Please check its plug, the wall switch, and that the adaptor is connected properly."
+      hi: "क्या purifier की lights जल रही हैं? कृपया उसका plug, wall switch, और adaptor ठीक से जुड़ा है, ये check कीजिए।"
+    outcomes:
+      was_off: {next: wp_wait_tank, label: "It was off or unplugged; lights are on now"}
+      lights_on: {next: wp_inlet, label: "Lights were already on"}
+      no_lights: {next: esc_power, label: "No lights even with the switch on"}
+    sources: [nobroker_water_purifier]
+
+  wp_inlet:
+    say:
+      en: "The purifier needs water coming in. Is water coming in the kitchen tap right now, and is the small valve on the pipe going into the purifier open?"
+      hi: "Purifier को अंदर आने वाला पानी चाहिए। क्या अभी kitchen के नल में पानी आ रहा है, और purifier में जाने वाले pipe पर लगा छोटा valve खुला है?"
+    help:
+      en: "The inlet valve is a small knob or lever on the thin pipe that runs from the tap line to the purifier. In line with the pipe usually means open."
+      hi: "Inlet valve उस पतले pipe पर एक छोटा knob या lever होता है जो नल की line से purifier तक जाता है। Pipe की सीध में होना आमतौर पर खुला होता है।"
+    outcomes:
+      no_house_water: {next: resolved_no_supply, label: "No water in the house taps right now"}
+      valve_was_closed: {next: wp_wait_tank, label: "Valve was closed; opened it"}
+      all_ok: {next: wp_restart, label: "Tap water is coming and the valve is open"}
+    sources: [nobroker_water_purifier]
+
+  wp_restart:
+    say:
+      en: "Let's restart it. Switch the purifier off at the wall, wait one minute, and switch it on again. Within a minute or two, do you hear it start working, or does water start coming?"
+      hi: "चलिए restart करते हैं। Purifier को wall switch से बंद कीजिए, एक minute रुकिए, और फिर on कीजिए। एक-दो minute में क्या उसके चलने की आवाज़ आती है, या पानी आने लगता है?"
+    outcomes:
+      fixed: {next: wp_wait_tank, label: "It started working"}
+      not_fixed: {next: esc_no_water, label: "Nothing changes"}
+    sources: [nobroker_water_purifier]
+
+  wp_leak:
+    say:
+      en: "Please close the small valve on the pipe going into the purifier, and switch the purifier off at the wall. Keep the area dry. Has the leaking stopped?"
+      hi: "कृपया purifier में जाने वाले pipe का छोटा valve बंद कीजिए, और purifier को wall switch से बंद कर दीजिए। आसपास की जगह सूखी रखिए। क्या leak रुक गया?"
+    outcomes:
+      stopped: {next: esc_leak, label: "Leak stopped"}
+      still_leaking: {next: esc_leak, label: "Still leaking"}
+    sources: [fixfirst_policy]
+
+  wp_wait_tank:
+    kind: followup
+    followup_minutes: 60
+    say:
+      en: "Good. It can take twenty to thirty minutes for the tank to fill. I'll check with you on WhatsApp in about an hour; if there's still no water, just reply and I'll book a technician."
+      hi: "बढ़िया। Tank भरने में बीस से तीस minute लग सकते हैं। मैं लगभग एक घंटे में WhatsApp पर पूछूँगी; अगर तब भी पानी न आए, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  resolved_no_supply:
+    kind: resolve
+    resolution: no_fault_water_supply
+    say:
+      en: "Then the purifier just has no water to clean. It'll start again once the water supply is back. If it doesn't, call us and we'll send a technician."
+      hi: "तो purifier के पास साफ़ करने के लिए पानी ही नहीं है। पानी की supply आते ही ये फिर चलने लगेगा। अगर न चले, तो हमें call कीजिए, हम technician भेज देंगे।"
+  esc_power:
+    kind: escalate
+    likely_cause: "Purifier has no lights with power at the socket: adaptor (SMPS) or board"
+    technician_note: "Carry an SMPS adaptor; check board"
+  esc_no_water:
+    kind: escalate
+    likely_cause: "No water with power and inlet supply fine: pump, solenoid valve, choked filter or membrane"
+    technician_note: "Check booster pump, SV, pre-filter and membrane"
+  esc_leak:
+    kind: escalate
+    likely_cause: "Purifier leaking"
+    technician_note: "Check fittings, tank and filter housings"
+  esc_taste:
+    kind: escalate
+    say:
+      en: "Until the technician checks it, please don't drink that water; use boiled or bottled water instead."
+      hi: "Technician के check करने तक कृपया वो पानी मत पीजिए; उबला हुआ या bottle का पानी इस्तेमाल कीजिए।"
+    likely_cause: "Taste or smell changed: filters or membrane due, or contamination"
+    technician_note: "Filter / membrane change; sanitise tank; TDS check"

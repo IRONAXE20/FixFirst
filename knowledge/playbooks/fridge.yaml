@@ -1,0 +1,293 @@
+# Refrigerator (single or double door): not running, not cooling, ice build-up, leaking, noise,
+# door not closing, over-cooling, broken parts. RentBasket's complaint log shows leaking, noise and
+# door problems as often as "not cooling", so those have their own branches.
+id: fridge_not_cooling
+appliance: fridge
+title: {en: "Fridge not cooling or not running", hi: "Fridge ठंडा नहीं कर रहा या चल नहीं रहा"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "Before we start, a quick safety check. Is there any burning smell, sparks, or water near the fridge's plug or stabilizer?"
+      hi: "शुरू करने से पहले एक छोटा safety check. क्या fridge के plug या stabilizer के पास कोई जलने की smell, चिंगारी, या पानी है?"
+    outcomes:
+      no_hazard: {next: triage, label: "Nothing like that"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, sparks or smoke"}
+      hazard_water: {hazard: water_electric, label: "Water near the plug, stabilizer or wiring"}
+    sources: [fixfirst_policy]
+
+  triage:
+    say:
+      en: "What's the problem with the fridge: is it completely off, running but not cooling, freezing things too much, leaking water, making a noise, or is the door not closing?"
+      hi: "Fridge में क्या problem है: पूरा बंद है, चल रहा है पर ठंडा नहीं कर रहा, चीज़ें ज़्यादा जमा रहा है, पानी leak हो रहा है, आवाज़ कर रहा है, या दरवाज़ा ठीक से बंद नहीं हो रहा?"
+    outcomes:
+      not_running: {next: fr_light, label: "Completely off / dead"}
+      not_cooling: {next: fr_setting, label: "Running but not cooling"}
+      over_cooling: {next: fr_overcool, label: "Too cold / vegetables or milk freezing"}
+      ice_buildup: {next: fr_defrost_offer, label: "Thick ice build-up"}
+      water_leak: {next: fr_leak_where, label: "Water leaking"}
+      noise: {next: fr_noise, label: "Strange noise"}
+      door_problem: {next: fr_door_close, label: "Door won't close or swings open by itself"}
+      broken_part: {next: esc_part, label: "A tray, shelf, bulb or handle is broken"}
+    sources: [samsung_uk_fridge, samsung_in_fridge_leak]
+
+  fr_light:
+    say:
+      en: "When you open the fridge door, does the light inside come on?"
+      hi: "Fridge का दरवाज़ा खोलने पर क्या अंदर की light जलती है?"
+    outcomes:
+      light_off: {next: fr_power, label: "No light inside"}
+      light_on: {next: esc_not_running, label: "Light comes on but the fridge isn't running"}
+    sources: [samsung_uk_fridge]
+
+  fr_power:
+    say:
+      en: "Please check the fridge's plug and wall switch. Many fridges are connected through a stabilizer, a small box with a light or display. Is the stabilizer switched on and showing a light?"
+      hi: "कृपया fridge का plug और wall switch check कीजिए। कई fridge एक stabilizer से जुड़े होते हैं, एक छोटा box जिस पर light या display होती है। क्या stabilizer on है और उसकी light जल रही है?"
+    help:
+      en: "A stabilizer is usually a grey or black box on the floor or wall near the fridge, with the fridge plugged into it."
+      hi: "Stabilizer आमतौर पर fridge के पास फ़र्श या दीवार पर रखा एक grey या काला box होता है, जिसमें fridge का plug लगा होता है।"
+    outcomes:
+      stabilizer_was_off: {next: fr_wait_stabilizer, label: "Stabilizer or switch was off; switched it on"}
+      all_on: {next: fr_socket_test, label: "Everything is on, still dead"}
+      no_stabilizer: {next: fr_socket_test, label: "No stabilizer; plug and switch are on"}
+    sources: [samsung_uk_fridge]
+
+  fr_wait_stabilizer:
+    say:
+      en: "Stabilizers usually wait about three minutes before giving power. Has the fridge started now?"
+      hi: "Stabilizer आमतौर पर बिजली देने से पहले लगभग तीन मिनट रुकता है। क्या अब fridge चालू हुआ?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: fr_socket_test, label: "Still dead after three minutes"}
+
+  fr_socket_test:
+    say:
+      en: "Please test the socket by plugging in a phone charger or another small appliance. Does the socket work?"
+      hi: "कृपया socket में phone charger या कोई छोटा appliance लगाकर test कीजिए। क्या socket काम कर रहा है?"
+    outcomes:
+      socket_dead: {next: fr_mcb, label: "Socket has no power"}
+      socket_ok: {next: esc_not_running, label: "Socket works, fridge still dead"}
+
+  fr_mcb:
+    say:
+      en: "Let's check the main switch board, the box with a row of small switches. Please do this only with dry hands. Is any switch pointing down, in the off position? If so, push it up once; if it falls again, leave it off. Is the fridge on now?"
+      hi: "अब main switch board check करते हैं, वो box जिसमें छोटे switches की line होती है। ये सिर्फ सूखे हाथों से कीजिए। क्या कोई switch नीचे, यानी OFF है? अगर हाँ, तो उसे एक बार ऊपर कीजिए; अगर फिर गिर जाए तो उसे छोड़ दीजिए। क्या अब fridge चालू है?"
+    outcomes:
+      fixed: {next: resolved, label: "Switch reset; fridge is on"}
+      trips_again: {next: esc_mcb_trip, label: "The switch fell down again"}
+      not_fixed: {next: esc_not_running, label: "All switches up / still dead"}
+
+  fr_setting:
+    say:
+      en: "Please check the temperature setting. On a knob, it should be in the middle, around 3 or 4, not on 0 or off. On a digital display, the fridge should be about 3 to 4 degrees. Is it set like that?"
+      hi: "कृपया temperature setting check कीजिए। Knob हो तो वो बीच में, लगभग 3 या 4 पर होना चाहिए, 0 या off पर नहीं। Digital display हो तो fridge लगभग 3 से 4 degree पर होना चाहिए। क्या ऐसा ही set है?"
+    outcomes:
+      was_wrong: {next: fr_wait_hours, label: "It was on 0/off or too warm; corrected it"}
+      correct: {next: fr_door, label: "Setting is correct"}
+    sources: [samsung_us_fridge, samsung_uk_fridge]
+
+  fr_door:
+    say:
+      en: "Does the door close fully, and is the rubber seal clean and not torn or folded? A quick test is to close the door on a sheet of paper; if the paper slides out easily, the seal isn't tight."
+      hi: "क्या दरवाज़ा पूरा बंद होता है, और उसकी rubber seal साफ़ है, फटी या मुड़ी हुई तो नहीं? एक आसान test: दरवाज़े में एक कागज़ फँसाकर बंद कीजिए; अगर कागज़ आसानी से निकल जाए, तो seal ठीक से बंद नहीं हो रही।"
+    outcomes:
+      seal_problem: {next: esc_seal, label: "Door doesn't close or seal is damaged"}
+      fixed_something: {next: fr_wait_hours, label: "Something was stopping the door; fixed it"}
+      ok: {next: fr_air, label: "Door and seal are fine"}
+    sources: [samsung_us_fridge]
+
+  fr_air:
+    say:
+      en: "Is there a gap of at least a few fingers behind and beside the fridge, and are the air vents inside not blocked by food packed tightly against them?"
+      hi: "क्या fridge के पीछे और side में कम से कम कुछ उंगलियों जितनी जगह है, और क्या अंदर की हवा वाली जगहें कसकर रखे सामान से ढकी तो नहीं?"
+    outcomes:
+      fixed_something: {next: fr_wait_hours, label: "Moved it out / cleared the vents"}
+      ok: {next: fr_frost, label: "Enough space, vents clear"}
+    sources: [samsung_us_fridge]
+
+  fr_frost:
+    say:
+      en: "Is there a thick layer of ice in the freezer or on the back wall inside?"
+      hi: "क्या freezer में या अंदर की पीछे वाली दीवार पर बर्फ़ की मोटी परत जमी है?"
+    outcomes:
+      thick_ice: {next: fr_defrost_offer, label: "Yes, thick ice"}
+      no_ice: {next: fr_recent, label: "No ice build-up"}
+    sources: [samsung_bd_direct_cool]
+
+  fr_defrost_offer:
+    say:
+      en: "Thick ice blocks the cold air. Defrosting means switching the fridge off, emptying it, and leaving the door open with towels around it for a few hours until the ice melts by itself. Please don't chip the ice with a knife; it can puncture the gas pipes. Would you like to do that, or shall I book a technician?"
+      hi: "मोटी बर्फ़ ठंडी हवा को रोक देती है। Defrost करने के लिए fridge बंद करके खाली कीजिए, और कुछ घंटों के लिए दरवाज़ा खुला छोड़ दीजिए, आसपास towel रखकर, जब तक बर्फ़ अपने आप न पिघल जाए। बर्फ़ को चाकू से मत खुरचिए, इससे gas की pipe में छेद हो सकता है। क्या आप ये करना चाहेंगे, या मैं technician book कर दूँ?"
+    outcomes:
+      will_defrost: {next: fr_wait_defrost, label: "Will defrost"}
+      technician: {next: esc_cooling, label: "Prefers a technician"}
+    sources: [samsung_bd_direct_cool]
+
+  fr_recent:
+    say:
+      en: "Was the fridge switched off, moved, or newly installed in the last few hours? It can take a few hours to get cold after that."
+      hi: "क्या पिछले कुछ घंटों में fridge बंद किया गया था, हिलाया गया था, या नया लगाया गया था? उसके बाद ठंडा होने में कुछ घंटे लग सकते हैं।"
+    outcomes:
+      recent: {next: fr_wait_hours, label: "Yes, recently off/moved/installed"}
+      not_recent: {next: esc_cooling, label: "No, it's been warm for a while"}
+
+  # ---- over-cooling --------------------------------------------------------------------
+  fr_overcool:
+    say:
+      en: "Please look at the temperature knob inside. On most fridges a higher number means colder. In winter it usually needs only 1 or 2, in the monsoon 3 or 4, and in peak summer 5 or 6. Is it set higher than that right now?"
+      hi: "कृपया अंदर का temperature knob देखिए। ज़्यादातर fridge में बड़ा number मतलब ज़्यादा ठंडा। सर्दियों में आमतौर पर 1 या 2 काफ़ी है, बारिश के मौसम में 3 या 4, और तेज़ गर्मी में 5 या 6। क्या अभी knob इससे ज़्यादा पर है?"
+    outcomes:
+      was_high: {next: fr_wait_overcool, label: "It was set too high; turned it down"}
+      setting_ok: {next: esc_overcool, label: "Setting is already low, still freezing"}
+    sources: [samsung_in_fridge_leak]
+
+  # ---- leaking ------------------------------------------------------------------------
+  fr_leak_where:
+    say:
+      en: "Where is the water: collecting inside the fridge, at the bottom under the vegetable box, or on the floor in front of or under the fridge?"
+      hi: "पानी कहाँ है: fridge के अंदर, सब्ज़ी वाले box के नीचे जमा हो रहा है, या fridge के आगे या नीचे फ़र्श पर?"
+    outcomes:
+      inside: {next: fr_drain_hole, label: "Inside the fridge"}
+      floor: {next: fr_level, label: "On the floor in front of or under the fridge"}
+    sources: [samsung_in_fridge_leak]
+
+  fr_drain_hole:
+    say:
+      en: "Water inside usually means the small drain hole on the back wall inside the fridge is blocked by food or ice. First switch the fridge off at its wall switch. Then gently pour a little lukewarm water into that hole and wipe away any food or ice around it. Did the water run down the hole?"
+      hi: "अंदर पानी आमतौर पर इसलिए जमता है क्योंकि fridge के अंदर पीछे की दीवार पर जो छोटा drain hole है, वो खाने या बर्फ़ से बंद हो गया है। पहले fridge को wall switch से बंद कीजिए। फिर उस hole में थोड़ा गुनगुना पानी धीरे से डालिए और आसपास का खाना या बर्फ़ पोंछ दीजिए। क्या पानी hole में नीचे चला गया?"
+    help:
+      en: "The drain hole is a small opening, about the size of a pencil, near the bottom of the back wall inside the fridge compartment, often under a little channel."
+      hi: "Drain hole एक छोटा छेद होता है, लगभग pencil जितना, fridge के अंदर पीछे की दीवार पर नीचे की तरफ़, अक्सर एक छोटी नाली के नीचे।"
+    outcomes:
+      cleared: {next: fr_wait_leak, label: "Water drained; hole is clear now"}
+      still_blocked: {next: esc_leak, label: "Water doesn't go down / can't find the hole"}
+    sources: [samsung_in_fridge_leak]
+
+  fr_level:
+    say:
+      en: "Water on the floor often means the fridge is leaning forward. It should stand firmly, with the front very slightly higher than the back. Does it rock, or lean towards the front?"
+      hi: "फ़र्श पर पानी अक्सर इसलिए आता है क्योंकि fridge आगे की तरफ़ झुका है। उसे मज़बूती से खड़ा होना चाहिए, और आगे का हिस्सा पीछे से थोड़ा सा ऊँचा। क्या fridge हिलता है, या आगे की तरफ़ झुका हुआ है?"
+    outcomes:
+      leaning: {next: esc_levelling, label: "It rocks or leans forward"}
+      level: {next: esc_leak, label: "It stands level"}
+    sources: [samsung_in_fridge_leak]
+
+  # ---- noise --------------------------------------------------------------------------
+  fr_noise:
+    say:
+      en: "Some sounds are normal: a bubbling or gurgling sound is the gas moving through the pipes, and a short hum or buzz is the compressor starting or stopping. Is it a sound like that, or a loud rattling, knocking or grinding?"
+      hi: "कुछ आवाज़ें normal होती हैं: बुलबुले या गुड़गुड़ की आवाज़ pipes में gas चलने की होती है, और थोड़ी देर की hum या buzz compressor के चालू या बंद होने की। क्या आवाज़ ऐसी है, या ज़ोर की खड़खड़, ठक-ठक या घिसने जैसी?"
+    outcomes:
+      normal_sound: {next: resolved_normal_noise, label: "Bubbling, gurgling or a short hum"}
+      loud_noise: {next: fr_noise_space, label: "Loud rattling, knocking or grinding"}
+    sources: [samsung_in_fridge_noise]
+
+  fr_noise_space:
+    say:
+      en: "Please check three things: the fridge isn't touching the wall or a cupboard, nothing on top of it or behind it is vibrating, and it stands firmly without rocking. Leave about a hand's width of space behind it. Is the noise gone now?"
+      hi: "कृपया तीन चीज़ें check कीजिए: fridge दीवार या अलमारी से छू तो नहीं रहा, उसके ऊपर या पीछे रखी कोई चीज़ तो नहीं हिल रही, और वो बिना हिले मज़बूती से खड़ा है। पीछे लगभग एक हथेली जितनी जगह छोड़िए। क्या अब आवाज़ बंद हुई?"
+    outcomes:
+      fixed: {next: resolved, label: "Noise stopped"}
+      still_noisy: {next: esc_noise, label: "Still noisy"}
+    sources: [samsung_in_fridge_noise]
+
+  # ---- door ---------------------------------------------------------------------------
+  fr_door_close:
+    say:
+      en: "Please check if a tray, bottle or the vegetable box is sticking out and stopping the door. Then wipe the rubber seal around the door with a damp cloth and a little soap, and dry it. Does the door close properly now?"
+      hi: "कृपया देखिए कि कोई tray, bottle या सब्ज़ी वाला box बाहर निकलकर दरवाज़े को रोक तो नहीं रहा। फिर दरवाज़े के चारों तरफ़ की rubber seal को गीले कपड़े और थोड़े साबुन से पोंछकर सुखा दीजिए। क्या अब दरवाज़ा ठीक से बंद हो रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Door closes properly now"}
+      seal_damaged: {next: esc_seal, label: "The rubber seal is torn, loose or folded"}
+      still_opens: {next: esc_door, label: "Still won't close or swings open by itself"}
+    sources: [samsung_in_fridge_noise, samsung_us_fridge]
+
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "That's great, the fridge is running again! It may take a couple of hours to get fully cold."
+      hi: "बहुत बढ़िया, fridge फिर से चल रहा है! पूरा ठंडा होने में एक-दो घंटे लग सकते हैं।"
+  resolved_normal_noise:
+    kind: resolve
+    resolution: no_fault_normal_sound
+    say:
+      en: "Good news, that's a normal sound and the fridge is working as it should. If it ever becomes a loud rattle or grinding, just call us."
+      hi: "अच्छी खबर, ये normal आवाज़ है और fridge ठीक काम कर रहा है। अगर कभी ज़ोर की खड़खड़ या घिसने की आवाज़ आए, तो हमें call कीजिए।"
+  fr_wait_overcool:
+    kind: followup
+    followup_minutes: 360
+    say:
+      en: "Thanks. It takes a few hours to settle at the new setting. I'll check with you on WhatsApp later today; if things are still freezing, just reply and I'll book a technician."
+      hi: "धन्यवाद। नई setting पर आने में कुछ घंटे लगते हैं। मैं आज बाद में WhatsApp पर पूछूँगी; अगर तब भी चीज़ें जम रही हों, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  fr_wait_leak:
+    kind: followup
+    followup_minutes: 240
+    say:
+      en: "Great, wipe the inside dry and switch the fridge back on. I'll check with you on WhatsApp in a few hours; if water collects again, just reply and I'll book a technician."
+      hi: "बढ़िया, अंदर का पानी पोंछकर सुखा दीजिए और fridge फिर से on कीजिए। मैं कुछ घंटों में WhatsApp पर पूछूँगी; अगर फिर से पानी जमे, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  fr_wait_hours:
+    kind: followup
+    followup_minutes: 180
+    say:
+      en: "It can take two to three hours to cool fully. I'll check with you on WhatsApp in about three hours. If it's still warm, just reply and I'll book a technician."
+      hi: "पूरा ठंडा होने में दो से तीन घंटे लग सकते हैं। मैं लगभग तीन घंटे में WhatsApp पर आपसे पूछूँगी। अगर तब भी ठंडा न हो, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  fr_wait_defrost:
+    kind: followup
+    followup_minutes: 240
+    say:
+      en: "Great. Once the ice has melted, wipe it dry, switch the fridge back on and give it a few hours. I'll message you on WhatsApp later today to check."
+      hi: "ठीक है। बर्फ़ पिघलने के बाद पोंछकर सुखा दीजिए, fridge फिर से on कीजिए और कुछ घंटे दीजिए। मैं आज बाद में WhatsApp पर पूछ लूँगी।"
+  esc_not_running:
+    kind: escalate
+    likely_cause: "Fridge dead with power at the socket: compressor relay, thermostat or PCB"
+    technician_note: "Check relay, overload protector and thermostat"
+  esc_mcb_trip:
+    kind: escalate
+    say:
+      en: "Please keep that switch off until our technician checks it, and keep the fridge door closed so the food stays cold longer."
+      hi: "कृपया technician के check करने तक वो switch बंद ही रहने दीजिए, और fridge का दरवाज़ा बंद रखिए ताकि खाना ज़्यादा देर ठंडा रहे।"
+    likely_cause: "Fridge trips the MCB: possible electrical leakage"
+    technician_note: "Electrical leakage test"
+  esc_cooling:
+    kind: escalate
+    say:
+      en: "Meanwhile, please keep the door closed as much as possible so the food stays cold longer."
+      hi: "तब तक कोशिश कीजिए कि दरवाज़ा कम से कम खुले, ताकि खाना ज़्यादा देर ठंडा रहे।"
+    likely_cause: "Running but not cooling with settings, seal and airflow fine: gas leak, compressor or fan"
+    technician_note: "Check refrigerant, compressor and evaporator fan"
+  esc_seal:
+    kind: escalate
+    likely_cause: "Door not closing or gasket damaged"
+    technician_note: "Carry door gasket for this model"
+  esc_leak:
+    kind: escalate
+    say:
+      en: "Until the technician comes, please keep a cloth under the leak and keep the floor near the plug dry."
+      hi: "Technician के आने तक leak के नीचे एक कपड़ा रख दीजिए, और plug के पास का फ़र्श सूखा रखिए।"
+    likely_cause: "Water leaking from the fridge: blocked defrost drain, overflowing drip tray or cracked tray"
+    technician_note: "Clear defrost drain; check and empty drip tray; check for cracks"
+  esc_levelling:
+    kind: escalate
+    likely_cause: "Fridge not level (leans forward): water runs to the front and leaks"
+    technician_note: "Level the fridge, front slightly higher; check drain path"
+  esc_noise:
+    kind: escalate
+    likely_cause: "Loud rattling/knocking/grinding with clearance and levelling fine"
+    technician_note: "Check condenser/evaporator fan, compressor mounting"
+  esc_overcool:
+    kind: escalate
+    likely_cause: "Over-cooling with the thermostat on a low setting: thermostat or sensor fault"
+    technician_note: "Check thermostat / sensor"
+  esc_door:
+    kind: escalate
+    likely_cause: "Door won't close or swings open with no obstruction: hinge or levelling"
+    technician_note: "Check door hinge and alignment; level the fridge"
+  esc_part:
+    kind: escalate
+    likely_cause: "Broken fridge part (tray, shelf, bulb or handle)"
+    technician_note: "Ask the customer for a photo; carry the part for this model"

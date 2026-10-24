@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+.pytest_cache/
+# RentBasket's own exports stay out of git
+Common_problems.csv
+*.xlsx
+.claude/

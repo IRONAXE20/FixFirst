@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FixFirst Ops</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .kpi { padding: 14px 16px; }
+    .kpi-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .kpi-value { font-size: 26px; font-weight: 720; letter-spacing: -0.02em; margin-top: 2px; }
+    .kpi-sub { font-size: 12px; color: var(--muted); }
+    .tabs { display: flex; gap: 6px; padding: 12px 14px 0; border-bottom: 1px solid var(--line); }
+    .tabs button { border: 0; background: none; padding: 9px 12px; font-weight: 650; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
+    .tabs button.on { color: var(--ink); border-bottom-color: var(--brand); }
+    .detail-row td { background: var(--surface-2); }
+    .detail { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; padding: 6px 2px; }
+    @media (max-width: 800px) { .detail { grid-template-columns: 1fr; } }
+    .detail h3 { font-size: 13px; color: var(--muted); margin: 0 0 6px; font-weight: 650; }
+    .kv { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 4px 10px; font-size: 13.5px; }
+    .kv dt { color: var(--muted); } .kv dd { margin: 0; }
+    .steps { margin: 0; padding-left: 18px; font-size: 13.5px; } .steps li { margin: 2px 0; }
+    .wa { white-space: pre-wrap; font-size: 13px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+    .tx { display: grid; gap: 6px; max-height: 360px; overflow-y: auto; font-size: 13.5px; }
+    .tx .a { color: var(--brand); } .tx .u { color: var(--ink); }
+    .thumbs { display: flex; gap: 6px; flex-wrap: wrap; } .thumbs img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+    .empty { padding: 28px; text-align: center; color: var(--muted); }
+    select.status { width: auto; padding: 4px 8px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="brand" href="/"><span class="brand-mark" id="logo"></span><span class="brand-name">FixFirst</span><span class="brand-tenant" data-tenant></span></a>
+    <span class="chip" id="status-chip"><span class="dot"></span>…</span>
+    <nav class="nav"><a href="/" data-page="call">Call</a><a href="/ops" data-page="ops">Ops</a><a href="/knowledge" data-page="knowledge">Knowledge</a></nav>
+  </div></header>
+  <main class="page stack">
+    <div class="kpis" id="kpis"></div>
+    <section class="card">
+      <div class="tabs" id="tabs">
+        <button data-tab="tickets" class="on">Tickets</button><button data-tab="calls">Calls</button><button data-tab="outbox">WhatsApp outbox</button>
+        <span class="muted small" style="margin-left:auto; align-self:center" id="refreshed"></span>
+      </div>
+      <div class="table-wrap" id="panel"></div>
+    </section>
+  </main>
+  <script type="module" src="/static/ops.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+# Washing machine error codes FixFirst may act on. Only codes documented on the brand's
+# own support pages are listed; anything else (other brands, unlisted codes) is recorded
+# for the technician and never interpreted. `route` names a route in playbooks/washer.yaml.
+# AC error codes are deliberately absent: they vary by model, so they are always captured
+# and escalated.
+appliance: washer
+brands:
+  lg:
+    aliases: ["lg", "l g", "el ji", "elji", "एलजी", "एल जी"]
+    source: lg_in_wm_codes
+    codes:
+      IE: {meaning: "Water not filling (inlet)", route: not_filling}
+      OE: {meaning: "Water not draining (outlet)", route: not_draining}
+      UE: {meaning: "Unbalanced load", route: unbalanced}
+      VS: {meaning: "Vibration sensor (load or levelling)", route: unbalanced}
+      US: {meaning: "Vibration sensor (load or levelling)", route: unbalanced}
+      DL: {meaning: "Lid/door not locked", route: lid}
+      CL: {meaning: "Child lock is on", route: child_lock}
+      TCL: {meaning: "Tub clean reminder (not a fault)", route: tub_clean}
+      PF: {meaning: "Power cut during a cycle (not a fault)", route: power_failure}
+      PE: {meaning: "Water level (pressure) sensor", route: restart_then_escalate}
+      FE: {meaning: "Overfill", route: restart_then_escalate}
+      E3: {meaning: "Drain motor", route: restart_then_escalate}
+      AE: {meaning: "Clears with a restart per LG; escalate if it returns", route: restart_then_escalate}
+      TE: {meaning: "Clears with a restart per LG; escalate if it returns", route: restart_then_escalate}
+      FF: {meaning: "Freeze failure", route: escalate}
+  samsung:
+    aliases: ["samsung", "samsang", "sumsung", "सैमसंग"]
+    source: samsung_in_4c_5c
+    codes:
+      4C: {meaning: "Water supply problem", route: not_filling}
+      4E: {meaning: "Water supply problem (older models)", route: not_filling}
+      5C: {meaning: "Not draining", route: not_draining}
+      5E: {meaning: "Not draining (older models)", route: not_draining}
+      UE: {meaning: "Unbalanced load", route: unbalanced, source: samsung_us_wm_codes}
+      UB: {meaning: "Unbalanced load", route: unbalanced, source: samsung_us_wm_codes}
+      DC: {meaning: "Door/lid error", route: lid, source: samsung_us_wm_codes}
+      DE: {meaning: "Door/lid error (older models)", route: lid, source: samsung_us_wm_codes}

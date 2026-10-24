@@ -1,0 +1,105 @@
+# LPG gas stove (2 or 3 burner): low flame, yellow flame, a burner that won't light, a stiff knob.
+# Any gas smell or hissing goes to the gas script (no switches, regulator off, windows open,
+# go outside, call 1906). The customer never opens the stove, the regulator or the cylinder valve.
+id: stove_problem
+appliance: stove
+title: {en: "Gas stove problem", hi: "Gas stove की problem"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "First, the most important check. Can you smell gas anywhere in the kitchen, or hear a hissing sound from the cylinder, the pipe or the stove?"
+      hi: "पहले सबसे ज़रूरी check. क्या kitchen में कहीं gas की smell आ रही है, या cylinder, pipe या stove से सी-सी की आवाज़ आ रही है?"
+    outcomes:
+      no_hazard: {next: triage, label: "No gas smell, no hissing"}
+      hazard_gas: {hazard: gas, label: "Gas smell or hissing"}
+      hazard_fire: {hazard: fire, label: "Flames out of control or something caught fire"}
+    sources: [pmuy_lpg_guidance, fixfirst_policy]
+
+  triage:
+    say:
+      en: "What's the problem: the flame is low on the burners, the flame is yellow or orange instead of blue, one burner won't light, or a knob is stuck or broken?"
+      hi: "क्या problem है: burners पर flame कम आ रही है, flame नीली की जगह पीली या नारंगी है, कोई एक burner जल नहीं रहा, या कोई knob अटका या टूटा है?"
+    outcomes:
+      low_flame: {next: st_regulator, label: "Low flame"}
+      yellow_flame: {next: st_burner_cap, label: "Yellow or orange flame"}
+      wont_light: {next: st_burner_cap, label: "One burner won't light"}
+      knob_problem: {next: esc_knob, label: "Knob stuck, loose or broken"}
+    sources: [pmuy_lpg_guidance]
+
+  st_regulator:
+    say:
+      en: "Please check the regulator on top of the cylinder: is its knob turned fully to ON? And look at the rubber pipe from the cylinder to the stove: is it bent, twisted, or pressed under something?"
+      hi: "कृपया cylinder के ऊपर लगा regulator देखिए: क्या उसका knob पूरा ON पर है? और cylinder से stove तक जाने वाला rubber pipe देखिए: क्या वो मुड़ा, ऐंठा, या किसी चीज़ के नीचे दबा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Fixed the regulator or freed the pipe; flame is normal"}
+      pipe_damaged: {next: esc_hose, label: "The pipe looks cracked, burnt or very old"}
+      all_ok: {next: st_all_burners, label: "Regulator is on and the pipe is fine"}
+    sources: [pmuy_lpg_guidance]
+
+  st_all_burners:
+    say:
+      en: "Is the flame low on all the burners, or only on one?"
+      hi: "क्या flame सभी burners पर कम है, या सिर्फ़ एक पर?"
+    outcomes:
+      all_burners: {next: st_cylinder, label: "Low on all burners"}
+      one_burner: {next: st_burner_cap, label: "Only one burner"}
+
+  st_cylinder:
+    say:
+      en: "When the cylinder is nearly empty, the flame gets low on every burner. Has the cylinder been in use for a long time since the last refill, or does it feel light when you tilt it slightly?"
+      hi: "जब cylinder लगभग खाली होता है, तो हर burner पर flame कम हो जाती है। क्या पिछली refill के बाद cylinder काफ़ी समय से चल रहा है, या हल्का सा झुकाने पर हल्का लगता है?"
+    outcomes:
+      likely_empty: {next: resolved_refill, label: "Probably nearly empty"}
+      recently_filled: {next: esc_low_flame, label: "It's a new or recently filled cylinder"}
+    sources: [pmuy_lpg_guidance]
+
+  st_burner_cap:
+    say:
+      en: "With all the knobs off and the stove cool, please check that the round burner cap on that burner sits flat and straight, and that it's dry and not blocked by spilled food. Wipe it with a dry cloth if needed, put it back straight, and light it again. Is the flame blue and even now?"
+      hi: "सभी knobs बंद करके और stove ठंडा होने पर, कृपया देखिए कि उस burner की गोल cap सीधी और बराबर बैठी है, और वो सूखी है, गिरे हुए खाने से बंद तो नहीं। ज़रूरत हो तो सूखे कपड़े से पोंछिए, सीधी लगाइए, और फिर जलाइए। क्या अब flame नीली और बराबर है?"
+    outcomes:
+      fixed: {next: resolved, label: "Flame is blue and even now"}
+      not_fixed: {next: esc_burner, label: "Still yellow, uneven or won't light"}
+    sources: [hunker_yellow_flame]
+
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "That's great, the stove is working properly again! Please remember to turn the regulator off when you're not cooking."
+      hi: "बहुत बढ़िया, stove फिर से ठीक चल रहा है! जब खाना न बना रहे हों, तब regulator बंद रखना याद रखिए।"
+  resolved_refill:
+    kind: resolve
+    resolution: no_fault_cylinder_empty
+    say:
+      en: "Then the cylinder is probably running out. Please book a refill with your gas distributor. If the flame is still low with a full cylinder, call us and we'll send a technician."
+      hi: "तो शायद cylinder खत्म होने वाला है। कृपया अपने gas distributor से refill book कीजिए। अगर भरे cylinder के साथ भी flame कम आए, तो हमें call कीजिए, हम technician भेज देंगे।"
+  esc_hose:
+    kind: escalate
+    say:
+      en: "Please turn the regulator off and don't use the stove until the pipe is replaced. Only an ISI-marked Suraksha LPG pipe should be used."
+      hi: "कृपया regulator बंद कर दीजिए और pipe बदलने तक stove मत चलाइए। सिर्फ़ ISI mark वाला Suraksha LPG pipe ही लगाना चाहिए।"
+    likely_cause: "Damaged or aged LPG rubber hose"
+    technician_note: "Replace with an ISI-marked Suraksha hose; leak check with soap solution"
+  esc_low_flame:
+    kind: escalate
+    likely_cause: "Low flame on all burners with a full cylinder and the regulator on: regulator or stove valve"
+    technician_note: "Check regulator, hose and stove valves; jets"
+  esc_burner:
+    kind: escalate
+    say:
+      en: "Until then, if you use that burner, keep the kitchen window open."
+      hi: "तब तक अगर आप वो burner इस्तेमाल करें, तो kitchen की खिड़की खुली रखिए।"
+    likely_cause: "Yellow/uneven flame or burner won't light with the cap seated and clean: blocked jet or air mixing"
+    technician_note: "Clean jet and burner ports; check air shutter and igniter"
+  esc_knob:
+    kind: escalate
+    say:
+      en: "Please don't force the knob. Keep the regulator off when the stove isn't in use."
+      hi: "कृपया knob पर ज़ोर मत लगाइए। जब stove इस्तेमाल न हो रहा हो, तब regulator बंद रखिए।"
+    likely_cause: "Gas stove knob stuck, loose or broken"
+    technician_note: "Check / replace the valve knob or spindle"

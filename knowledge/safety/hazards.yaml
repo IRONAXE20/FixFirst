@@ -1,0 +1,225 @@
+# Safety scripts and the deterministic hazard screen.
+#
+# Every caller turn is screened before the LLM sees it. A match skips troubleshooting:
+# the agent reads the script below word for word, an URGENT ticket is created and the
+# on-call team is notified. The LLM has a second, independent route (flag_safety_concern).
+#
+# Status: DRAFT. Needs sign-off from RentBasket's senior technician and legal before use
+# with real customers. Scripts are written for a female voice agent (Hindi verb forms).
+#
+# Placeholders: {national} {fire} {lpg} {callback_minutes} {company}
+
+# When several hazards match one turn, the first kind in this list wins.
+priority: [fire, gas, injury, electrical, battery, water_electric]
+
+hazards:
+  fire:
+    label: Fire, flames or explosion
+    script:
+      en: >-
+        Please leave the room right now and keep everyone away from it. Call {national}, or the fire
+        brigade on {fire}. Don't throw water on anything electrical. Only if the main switch is on your
+        way out, switch it off, but don't go back in. I'm marking this urgent, and our team will call
+        you within {callback_minutes} minutes.
+      hi: >-
+        कृपया अभी उस कमरे से बाहर निकल जाइए और सबको वहाँ से दूर रखिए। {national} पर, या fire brigade
+        को {fire} पर call कीजिए। बिजली वाली किसी चीज़ पर पानी मत डालिए। अगर main switch बाहर निकलते
+        रास्ते में ही है तभी उसे बंद कीजिए, पर वापस अंदर मत जाइए। मैं इसे urgent mark कर रही हूँ,
+        हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+
+  gas:
+    label: Gas smell or LPG leak
+    # Never ask the caller to operate any switch, plug or appliance: a switch can spark.
+    script:
+      en: >-
+        This could be a gas leak, so please listen carefully. Do not switch any light, fan or appliance
+        on or off, and do not light a match or a lighter. If you can reach it safely, turn the regulator
+        knob on the gas cylinder to off. Open the doors and windows, and take everyone outside. Once you
+        are outside, call the LPG emergency number {lpg}. I'm marking this urgent, and our team will call
+        you within {callback_minutes} minutes.
+      hi: >-
+        ये gas leak हो सकता है, इसलिए ध्यान से सुनिए। कोई भी light, fan या appliance का switch ON या OFF
+        मत कीजिए, और माचिस या lighter मत जलाइए। अगर आप safely पहुँच सकते हैं, तो cylinder का regulator
+        knob बंद कर दीजिए। दरवाज़े और खिड़कियाँ खोल दीजिए और सबको बाहर ले जाइए। बाहर पहुँचकर LPG
+        emergency number {lpg} पर call कीजिए। मैं इसे urgent mark कर रही हूँ, हमारी team
+        {callback_minutes} मिनट के अंदर आपको call करेगी।
+
+  injury:
+    label: Someone hurt, shocked or unconscious
+    script:
+      en: >-
+        If the person might still be touching the appliance or a wire, please don't touch them. Switch
+        off the main power only if you can reach it safely. Call {national} for an ambulance right now.
+        I'm marking this urgent, and our team will call you within {callback_minutes} minutes.
+      hi: >-
+        अगर वो इंसान अभी भी appliance या किसी तार को छू रहा हो सकता है, तो उन्हें मत छुइए। Main power
+        तभी बंद कीजिए जब आप वहाँ safely पहुँच सकें। अभी {national} पर ambulance के लिए call कीजिए।
+        मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+
+  electrical:
+    label: Sparks, shock, burning smell or smoke
+    script:
+      en: >-
+        Please stop using the appliance and don't touch it, its plug or its wires. If you can reach the
+        main switch board without touching the appliance or any water, switch off the main switch. If you
+        see smoke or flames, leave the room and call {national}. If anyone got a shock and feels unwell,
+        please see a doctor. I'm marking this urgent, and our team will call you within
+        {callback_minutes} minutes.
+      hi: >-
+        कृपया appliance का इस्तेमाल बंद कर दीजिए, और उसे, उसके plug या तारों को मत छुइए। अगर आप
+        appliance या पानी को छुए बिना main switch board तक पहुँच सकते हैं, तो main switch बंद कर दीजिए।
+        अगर धुआँ या आग दिखे तो कमरे से बाहर निकलिए और {national} पर call कीजिए। अगर किसी को करंट लगा
+        है और तबीयत ठीक नहीं लग रही, तो doctor को दिखाइए। मैं इसे urgent mark कर रही हूँ, हमारी team
+        {callback_minutes} मिनट के अंदर आपको call करेगी।
+
+  battery:
+    label: Inverter battery swelling, leaking, smell or heat
+    # Battery gas is flammable: no switching, no flames, ventilate, keep away.
+    script:
+      en: >-
+        Please don't touch the battery, its terminals or its wires. Open a window to let fresh air in,
+        keep children and pets away, and don't light any flame near it. Please don't switch anything on
+        or off near the battery. I'm marking this urgent, and our team will call you within
+        {callback_minutes} minutes.
+      hi: >-
+        कृपया battery, उसके terminals या तारों को मत छुइए। हवा आने के लिए खिड़की खोल दीजिए, बच्चों और
+        pets को दूर रखिए, और उसके पास कोई आग मत जलाइए। Battery के पास कोई भी switch ON या OFF मत कीजिए।
+        मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+
+  water_electric:
+    label: Water near plugs, sockets, wires or a running appliance
+    script:
+      en: >-
+        Please don't touch the appliance, its plug or the water, and don't try to unplug it with wet hands.
+        If you can reach the main switch board without stepping in water, switch off the main switch.
+        I'm marking this urgent, and our team will call you within {callback_minutes} minutes.
+      hi: >-
+        कृपया appliance, उसके plug या पानी को मत छुइए, और गीले हाथों से plug निकालने की कोशिश मत कीजिए।
+        अगर आप पानी में पैर रखे बिना main switch board तक पहुँच सकते हैं, तो main switch बंद कर दीजिए।
+        मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+
+# ---------------------------------------------------------------------------------------
+# Lexicon. Text is lower-cased and punctuation becomes clause breaks before matching.
+# Latin patterns are regexes matched on word boundaries. Devanagari entries match whole
+# words; a trailing * makes an entry a stem ("चिंगार*" also matches "चिंगारियां").
+# `devanagari_regex` entries are regexes for English loanwords as speech-to-text writes them in
+# "transcribe" mode ("स्मोक", "शॉक", "गैस की बहुत स्मेल"). The default STT mode is "codemix",
+# which keeps English words in Roman script, but these stay as a second line of defence.
+# Spellings include common speech-to-text variants of Hinglish. Add to these lists
+# whenever a missed phrase shows up in call transcripts.
+#
+# Deliberately NOT triggers, because callers say them about ordinary faults:
+#   "current aa raha hai" (= power is on), "jhatke maar rahi hai" (= machine shaking),
+#   "barf pighal rahi" (= ice melting), "gas khatam / gas bharni hai" (= AC refrigerant),
+#   "plug laga hai, pani nahi aa raha" (= washer not filling).
+# ---------------------------------------------------------------------------------------
+lexicon:
+  fire:
+    latin:
+      - "aag"
+      - "fire"
+      - "flames?"
+      - "lapat\\w*"
+      - "caught fire"
+      - "on fire"
+      - "blast"
+      - "explo\\w*"
+      - "(geyser|gizer|cylinder|silinder|battery|tv|compressor|inverter)\\b.{0,15}(phat|burst|blast)\\w*"
+    devanagari: ["आग", "लपट*", "धमाका", "गीज़र फट*", "सिलेंडर फट*"]
+    devanagari_regex: ["फायर", "फ़ायर", "ब्लास्ट"]
+    # "flame kam aa rahi hai", "peeli flame" describe a weak gas-stove flame (a playbook fault), not
+    # a fire. Only the word flame/lapat is excused; "aag" or "fire" in the same clause still triggers.
+    weak_flame_context: '\b(kam|kum|low|weak|dheem\w*|dhim\w*|halk\w*|chhot\w*|small|yellow|peel\w*|pil[ia]|orange|narang\w*|laal|red|blue|neel\w*|uneven|nahi jal\w*|not light\w*)\b|कम|धीम|हल्क|छोट|पील|नारंग|नील'
+  gas:
+    latin:
+      - "gas\\b.{0,20}\\b(smell|smel|badbu|badboo|badbo|bu|boo|gandh|mehak)"
+      - "(smell|smells|smelling|badbu|badboo)\\s*(of|like|jaisi)?\\s*(gas|lpg|cooking gas)"
+      - "gas\\s*(leak\\w*|leek\\w*|nikal\\w*)"
+      - "(cylinder|silinder|regulator|chulha|chula|stove|burner|gas pipe)\\b.{0,30}(leak\\w*|smell|badbu|hiss\\w*)"
+      - "(leak\\w*|smell|badbu)\\b.{0,30}(cylinder|silinder|regulator|chulha|chula|stove|burner)"
+      - "rotten egg"
+      - "sad[ae] and[ae]"
+    devanagari: ["गैस की बदबू", "गैस की बू", "गैस की स्मेल", "गैस लीक", "गैस की गंध", "सिलेंडर लीक", "रेगुलेटर लीक"]
+    devanagari_regex:
+      - "गैस.{0,20}(स्मेल|बदबू|गंध|लीक)"
+      - "(स्मेल|बदबू|गंध)\\s*(आ रही|है)?.{0,10}गैस"
+      - "एलपीजी.{0,20}(स्मेल|बदबू|लीक)"
+      - "(सिलेंडर|सिलिंडर|रेगुलेटर|चूल्हे|चूल्हा|स्टोव|बर्नर).{0,25}(लीक|स्मेल|बदबू)"
+    # A "gas leak" said about an AC or fridge is refrigerant (a technician job), not LPG.
+    # Smell words still trigger the gas script because some refrigerants are flammable.
+    refrigerant_context: "(\\bac\\b|a c|a\\.c|air ?condition\\w*|fridge|refrigerator|frij|cooling|refill\\w*|bhar\\w*|khatam|kam ho|top ?up|compressor|एसी|फ्रिज|रेफ्रिजरेटर|कूलिंग|रीफिल|भर|खत्म|कंप्रेसर)"
+    smell_words: "(smell|smel|badbu|badboo|\\bbu\\b|\\bboo\\b|gandh|बदबू|गंध|स्मेल)"
+  injury:
+    latin:
+      - "(kisi|bachch\\w*|baby|beti|beta|maid|didi|bhaiya|papa|mummy|mom|dad|son|daughter|child|kid|wife|husband|someone|somebody)\\b.{0,30}(current|shock|jhatk\\w*|electrocut\\w*)"
+      - "electrocut\\w*"
+      - "behosh\\w*"
+      - "unconscious"
+      - "not breathing"
+      - "saans nahi"
+    devanagari: ["बेहोश*", "बच्चे को करंट", "किसी को करंट"]
+    devanagari_regex: ["(बच्चे|बच्ची|किसी|मेड|दीदी|भैया|मम्मी|पापा)\\s*को.{0,25}(करंट|शॉक|झटका)"]
+  electrical:
+    latin:
+      - "sparks?"
+      - "sparking"
+      - "sparkin"
+      - "chingar\\w*"
+      - "chingaar\\w*"
+      - "short ?circuit"
+      - "shot ?circuit"
+      - "current\\s*(lag\\w*|maar\\w*|mar raha|mar rahi|de raha|de rahi)"
+      - "lag(a|i|ta|ti|\\s*raha|\\s*rahi)\\s*current"
+      - "current ka (jhatk\\w*|shock)"
+      - "(body|bodi|machine|door|handle|tap|nal|paani|pani|water|metal|steel)\\b.{0,20}current\\s*(aa raha|aa rahi|aata|aati)"
+      - "electric shock"
+      - "(got|getting|giving|gives) (a |an )?(electric )?shock"
+      - "shock\\s*(lag\\w*|maar\\w*|de raha|de rahi|aa raha)"
+      - "jhatk\\w*\\s*lag\\w*"
+      - "(mujhe|mujhko|humko|hume|hamein|usko|unko|isko)\\s*jhatk\\w*"
+      - "burning smell"
+      - "burnt smell"
+      - "smell of burning"
+      - "smells? burnt"
+      - "something (is )?burning"
+      - "jalne ki\\s*(smell|smel|badbu|badboo|bu|boo|gandh)"
+      - "jal(i|a) hui\\s*(smell|badbu|bu|boo)"
+      - "kuch jal (raha|rahi)"
+      - "(wire|taar|plug|socket|board|switch|cable)\\s*(jal|pighal|melt)\\w*"
+      - "plastic\\s*(jal|pighal|melt)\\w*"
+      - "smoke"
+      - "smoking"
+      - "dhu+a+n?"
+      - "dhuwa\\w*"
+    devanagari: ["चिंगार*", "स्पार्क*", "शॉर्ट सर्किट", "करंट लग*", "करंट मार*", "करंट का झटका", "झटका लग*", "जलने की", "जली हुई", "कुछ जल रहा", "तार पिघल*", "प्लग पिघल*", "तार जल*", "प्लग जल*", "धुआं", "धुआँ", "धुंआ"]
+    devanagari_regex:
+      - "स्मोक"
+      - "शॉक\\s*(लग|मार|दे|आ)"
+      - "इलेक्ट्रिक\\s*शॉक"
+      - "(बर्निंग|बर्न्ट|जलने की|जली हुई)\\s*(स्मेल|बदबू|गंध)"
+      - "शॉर्ट\\s*सर्किट"
+      - "(बॉडी|मशीन|दरवाज़े|हैंडल|नल|पानी).{0,20}करंट"
+      - "(वायर|प्लग|सॉकेट|बोर्ड|स्विच|प्लास्टिक)\\s*(जल|पिघल|मेल्ट)"
+    # Single words also matched with one typo, to survive speech-to-text errors.
+    fuzzy: ["chingari", "chingaari", "sparking", "dhuaan"]
+  battery:
+    latin:
+      - "(battery|batri|battry|betri)\\b.{0,30}(ph?oo?l\\w*|swell\\w*|swollen|bulg\\w*|leak\\w*|acid|teza+b|garam|hot|dhu\\w*|smoke|smell|badbu|hiss\\w*|crack\\w*|toot\\w*)"
+      - "(ph?oo?l\\w*|swell\\w*|swollen|bulg\\w*|leak\\w*|garam|hot)\\b.{0,20}(battery|batri|battry|betri)"
+      - "acid\\s*(leak\\w*|nikal\\w*|gir\\w*|bah\\w*)"
+      - "teza+b"
+    devanagari: ["बैटरी फूल*", "बैटरी लीक", "बैटरी गरम", "तेज़ाब", "तेजाब", "एसिड"]
+    devanagari_regex: ["बैटरी.{0,25}(फूल|लीक|गरम|स्मेल|बदबू|धुआ|स्मोक|फट|स्वेल)"]
+  water_electric:
+    # Matched when a water word and an electrical word appear in the same clause and the
+    # water word is not negated ("pani nahi aa raha" is a filling fault, not a hazard).
+    water: "(pani|paani|water|leak\\w*|geela|gila|wet|bhar gaya|tapak\\w*|पानी|गीला|टपक\\w*|लीक)"
+    electric: "(socket|plug|switch ?board|\\bboard\\b|extension|wire|wiring|taar|स्विच ?बोर्ड|सॉकेट|प्लग|तार|बोर्ड|एक्सटेंशन|वायर)"
+
+negation:
+  # Hazard words negated in the same clause ("no burning smell", "spark nahi hai") do not trigger.
+  words: ["no", "not", "never", "without", "nahi", "nahin", "nai", "nahi hai", "bilkul nahi", "नहीं", "नही", "कोई नहीं", "ना"]
+  # These look negative but mean "I don't know", so they must not cancel a hazard.
+  not_negation: ["pata nahi", "nahi pata", "pata nahin", "nahin pata", "not sure", "don't know", "dont know", "पता नहीं", "नहीं पता"]
+  # Words that end a clause, so "smell nahi, par chingari aa rahi" still catches the spark.
+  clause_breaks: ["par", "pr", "but", "lekin", "magar", "aur", "and", "however", "फिर भी", "पर", "लेकिन", "मगर", "और"]

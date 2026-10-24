@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FixFirst Photo Upload</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    .wrap { max-width: 460px; margin: 0 auto; padding: 28px 16px; display: grid; gap: 16px; }
+    .big { width: 100%; padding: 18px; font-size: 17px; border-radius: 14px; }
+    .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+    .ok { color: var(--ok); font-weight: 650; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="brand"><span class="brand-mark" id="logo"></span><span class="brand-name">FixFirst</span><span class="brand-tenant" id="company"></span></div>
+    <section class="card card-pad" id="card">
+      <h2 style="font-size:18px" id="title">Loading…</h2>
+      <p class="muted" id="sub"></p>
+      <label class="btn primary big">📷 Take or choose a photo<input type="file" accept="image/*" capture="environment" id="file" hidden multiple></label>
+      <p class="small muted">Helpful photos: the error code on the display, the brand/model sticker, the problem area (for example, a leak).</p>
+      <div class="thumbs" id="thumbs"></div>
+      <p id="msg"></p>
+    </section>
+  </main>
+  <script type="module">
+    import { api, esc, LOGO } from "/static/common.js";
+    const $ = (id) => document.getElementById(id);
+    $("logo").innerHTML = LOGO;
+    const token = location.pathname.split("/").pop();
+    try {
+      const info = await api(`/api/upload/${token}`);
+      $("company").textContent = `for ${info.company}`;
+      $("title").textContent = `Ticket ${info.code}`;
+      $("sub").textContent = `${info.name ? info.name.split(" ")[0] + ", add" : "Add"} a photo of your ${info.appliance || "appliance"} so the technician comes prepared.`;
+    } catch (e) {
+      $("title").textContent = "Link not found";
+      $("sub").textContent = e.message;
+      document.querySelector("label.btn").classList.add("hidden");
+    }
+    $("file").addEventListener("change", async (e) => {
+      for (const file of e.target.files) {
+        const fd = new FormData();
+        fd.append("file", file);
+        $("msg").textContent = "Uploading…";
+        try {
+          const res = await api(`/api/upload/${token}`, fd);
+          $("thumbs").insertAdjacentHTML("beforeend", `<img src="${esc(res.url)}" alt="">`);
+          $("msg").innerHTML = `<span class="ok">✓ Sent to the technician. You can add more.</span>`;
+        } catch (err) {
+          $("msg").textContent = err.message;
+        }
+      }
+      e.target.value = "";
+    });
+  </script>
+</body>
+</html>

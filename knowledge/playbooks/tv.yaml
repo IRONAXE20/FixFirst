@@ -1,0 +1,122 @@
+# LED / smart TV: dead, standby light on but black screen, "No signal", remote not working,
+# screen damage. The customer never opens the back cover.
+id: tv_problem
+appliance: tv
+title: {en: "TV problem", hi: "TV की problem"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "First, a quick safety check. Is there any burning smell, smoke, sparks or a crackling sound from the TV or its plug?"
+      hi: "पहले एक छोटा safety check. क्या TV या उसके plug से कोई जलने की smell, धुआँ, चिंगारी या चटकने की आवाज़ आ रही है?"
+    outcomes:
+      no_hazard: {next: triage, label: "Nothing like that"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, smoke, sparks or crackling"}
+    sources: [fixfirst_policy]
+
+  triage:
+    say:
+      en: "What's happening with the TV: is it completely dead, is the small red light on but the screen stays black, does it say No Signal, is the remote not working, or is there a problem on the screen like lines or cracks?"
+      hi: "TV में क्या हो रहा है: बिल्कुल बंद है, छोटी लाल light जल रही है पर screen काली है, No Signal लिखा आ रहा है, remote काम नहीं कर रहा, या screen पर lines या crack जैसी problem है?"
+    outcomes:
+      dead: {next: tv_power, label: "Completely dead, no light"}
+      standby_black: {next: tv_button, label: "Red standby light on, screen black"}
+      no_signal: {next: tv_source, label: "Shows No Signal / no channels"}
+      remote: {next: tv_remote, label: "Remote not working"}
+      screen_damage: {next: esc_screen, label: "Lines, patches or cracks on the screen"}
+    sources: [samsung_tv_no_power, samsung_tv_black_screen]
+
+  tv_power:
+    say:
+      en: "Please check the TV's plug, the wall switch, and any extension board or stabilizer it's connected to. You can test the socket with a phone charger. Does the red standby light come on now?"
+      hi: "कृपया TV का plug, wall switch, और कोई extension board या stabilizer जिससे वो जुड़ा है, check कीजिए। Socket को phone charger लगाकर test कर सकते हैं। क्या अब लाल standby light जली?"
+    outcomes:
+      light_on: {next: tv_button, label: "Standby light is on now"}
+      socket_dead: {next: esc_socket, label: "The socket itself has no power"}
+      still_dead: {next: esc_power, label: "Socket works, TV still dead"}
+    sources: [samsung_tv_no_power]
+
+  tv_button:
+    say:
+      en: "Please press the power button on the TV itself, not the remote. It's usually under the middle of the screen or on the back. Does the TV turn on?"
+      hi: "कृपया remote नहीं, TV पर लगा power button दबाइए। ये आमतौर पर screen के बीच में नीचे या पीछे होता है। क्या TV on हुआ?"
+    outcomes:
+      turns_on: {next: tv_remote, label: "Yes, it turned on with the TV button"}
+      still_black: {next: tv_unplug, label: "Still black"}
+    sources: [samsung_tv_no_power]
+
+  tv_unplug:
+    say:
+      en: "Let's restart it. Pull the TV's plug out of the wall, wait one full minute, then plug it back in and switch it on. Does a picture come now?"
+      hi: "चलिए restart करते हैं। TV का plug wall से निकालिए, पूरा एक minute रुकिए, फिर plug लगाकर on कीजिए। क्या अब picture आई?"
+    outcomes:
+      fixed: {next: resolved, label: "Picture is back"}
+      not_fixed: {next: esc_power, label: "Still black"}
+    sources: [samsung_tv_no_power]
+
+  tv_remote:
+    say:
+      en: "Then the remote may be the problem. Please put in two new batteries the right way round, and point it straight at the TV. Does the remote work now?"
+      hi: "तो शायद remote की problem है। कृपया दो नई batteries सही तरफ़ से लगाइए, और remote को सीधा TV की तरफ़ करके दबाइए। क्या अब remote काम कर रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Remote works now"}
+      not_fixed: {next: esc_remote, label: "Remote still doesn't work"}
+    sources: [samsung_tv_no_power]
+
+  tv_source:
+    say:
+      en: "No Signal usually means the TV is on the wrong input. Make sure the set-top box is switched on, then press the Source or Input button on the TV remote and choose the HDMI or AV where the set-top box is connected. Do you see channels now?"
+      hi: "No Signal का मतलब आमतौर पर TV गलत input पर है। पहले देखिए कि set-top box on है, फिर TV remote पर Source या Input button दबाकर वो HDMI या AV चुनिए जिसमें set-top box लगा है। क्या अब channels आ रहे हैं?"
+    outcomes:
+      fixed: {next: resolved, label: "Channels are back"}
+      not_fixed: {next: tv_cable, label: "Still No Signal"}
+    sources: [samsung_tv_black_screen]
+
+  tv_cable:
+    say:
+      en: "Please check the cable between the set-top box and the TV is pushed in firmly at both ends. If you can, restart the set-top box too. Do you see channels now?"
+      hi: "कृपया check कीजिए कि set-top box और TV के बीच का cable दोनों तरफ़ अच्छे से अंदर लगा है। हो सके तो set-top box भी restart कीजिए। क्या अब channels आ रहे हैं?"
+    outcomes:
+      fixed: {next: resolved, label: "Channels are back"}
+      apps_work: {next: resolved_set_top_box, label: "TV menu and apps work, only the set-top box has no signal"}
+      not_fixed: {next: esc_signal, label: "Still No Signal on every input"}
+    sources: [samsung_tv_black_screen]
+
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "That's great, the TV is working again!"
+      hi: "बहुत बढ़िया, TV फिर से चल रहा है!"
+  resolved_set_top_box:
+    kind: resolve
+    resolution: no_fault_set_top_box
+    say:
+      en: "Then the TV itself is fine, and the signal problem is with the set-top box or the dish connection. Please call your DTH or cable provider for that. If the TV gives any other trouble, call us."
+      hi: "तो TV ठीक है, और signal की problem set-top box या dish connection में है। उसके लिए अपने DTH या cable provider को call कीजिए। TV में कोई और problem हो, तो हमें call कीजिए।"
+  esc_socket:
+    kind: escalate
+    likely_cause: "No power at the TV socket"
+    technician_note: "Check the socket / board circuit"
+  esc_power:
+    kind: escalate
+    likely_cause: "TV won't power on or picture stays black after a restart: power supply or main board"
+    technician_note: "Check power supply board, backlight and main board"
+  esc_remote:
+    kind: escalate
+    likely_cause: "Remote not working with new batteries"
+    technician_note: "Carry a replacement remote for this model; check IR receiver"
+  esc_signal:
+    kind: escalate
+    likely_cause: "No Signal on every input with cables and set-top box checked"
+    technician_note: "Check HDMI ports and input board"
+  esc_screen:
+    kind: escalate
+    say:
+      en: "Please don't press on the screen. If you can, send a photo of the screen on WhatsApp so the technician knows what to bring."
+      hi: "कृपया screen पर दबाव मत डालिए। हो सके तो screen की एक photo WhatsApp पर भेज दीजिए ताकि technician सही सामान लेकर आए।"
+    likely_cause: "Lines, patches or cracks on the screen: panel or T-con fault"
+    technician_note: "Check panel / T-con; ask for a photo first"

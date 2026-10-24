@@ -1,0 +1,491 @@
+# Fully automatic washing machine (top or front load): not starting, not filling, not
+# draining, stopping in spin, lid/door, error codes, leaking, noise.
+# Error codes are looked up in knowledge/errorcodes/washer.yaml (official LG India and
+# Samsung sources only) and land on one of the `routes` below. Unknown codes or brands are
+# recorded for the technician, never guessed.
+id: washer_problem
+appliance: washer
+title: {en: "Washing machine problem", hi: "Washing machine की problem"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+routes:
+  not_filling: nf_tap
+  not_draining: nd_hot
+  unbalanced: ub_spread
+  lid: lid_close
+  child_lock: child_lock
+  tub_clean: resolved_tub_clean
+  power_failure: resolved_power_failure
+  restart_then_escalate: code_restart
+  escalate: esc_error_code
+nodes:
+  safety_check:
+    say:
+      en: "Before we start, a quick safety check. Is there any water near the machine's plug or socket, or any burning smell or sparks?"
+      hi: "शुरू करने से पहले एक छोटा safety check. क्या machine के plug या socket के पास पानी है, या कोई जलने की smell या चिंगारी?"
+    outcomes:
+      no_hazard: {next: triage, label: "No water near the plug, no burning smell or sparks"}
+      hazard_water: {hazard: water_electric, label: "Water near the plug, socket or wiring"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, sparks or smoke"}
+    sources: [fixfirst_policy]
+
+  triage:
+    say:
+      en: "What's happening with the machine: is it not starting, not filling with water, not draining, stopping in the spin, or showing an error code?"
+      hi: "Machine में क्या हो रहा है: start नहीं हो रही, पानी नहीं भर रहा, पानी नहीं निकल रहा, spin में रुक जाती है, या कोई error code दिख रहा है?"
+    outcomes:
+      not_starting: {next: ns_display, label: "Won't start"}
+      not_filling: {next: nf_tap, label: "Not filling with water"}
+      not_draining: {next: nd_hot, label: "Water not draining"}
+      unbalanced: {next: ub_spread, label: "Stops or shakes in the spin"}
+      child_lock: {next: child_lock, label: "Lock symbol or CL on the display (child lock)"}
+      lid_locked: {next: lid_close, label: "Lid or door problem / won't lock"}
+      door_wont_open: {next: lid_wont_open, label: "Door won't open after the wash"}
+      error_code: {next: error_code, label: "Shows an error code"}
+      leaking: {next: lk_where, label: "Leaking water"}
+      noise: {next: noise_check, label: "Strange noise"}
+    sources: [lg_in_wm_codes]
+
+  # ---- won't start -------------------------------------------------------------------
+  ns_display:
+    say:
+      en: "Is the display or any light on the machine on?"
+      hi: "क्या machine की display या कोई भी light जल रही है?"
+    outcomes:
+      display_on: {next: ns_lid, label: "Display is on"}
+      display_off: {next: ns_power, label: "Nothing lights up"}
+    sources: [lg_in_wm_codes]
+
+  ns_power:
+    say:
+      en: "Please check the plug is pushed in fully and the wall switch is on. You can test the socket by plugging in a phone charger. Does the machine come on now?"
+      hi: "कृपया check कीजिए कि plug पूरा अंदर लगा है और wall switch on है। Socket को phone charger लगाकर test कर सकते हैं। क्या अब machine on हुई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it's on now"}
+      socket_dead: {next: ns_mcb, label: "The socket itself has no power"}
+      socket_ok: {next: esc_no_power, label: "Socket works, machine still dead"}
+    sources: [lg_in_wm_codes]
+
+  ns_mcb:
+    say:
+      en: "Let's check the main switch board, the box with a row of small switches, usually near the main door or kitchen. Please do this only with dry hands. Is any switch pointing down, in the off position?"
+      hi: "अब main switch board check करते हैं, वो box जिसमें छोटे-छोटे switches की line होती है, आमतौर पर main door या kitchen के पास। ये सिर्फ सूखे हाथों से कीजिए। क्या कोई switch नीचे, यानी OFF position में है?"
+    help:
+      en: "It's called the MCB box. Inside there's a row of finger-sized switches. Up is on, down is off."
+      hi: "इसे MCB box कहते हैं। अंदर उंगली जितने बड़े switches की line होती है। ऊपर मतलब ON, नीचे मतलब OFF।"
+    outcomes:
+      one_down: {next: ns_mcb_reset, label: "One switch is down / off"}
+      all_up: {next: esc_no_power, label: "All switches are up"}
+      cant_find: {next: esc_no_power, label: "Can't find or reach it"}
+
+  ns_mcb_reset:
+    say:
+      en: "Push that switch up once and try the machine. If the switch falls down again, leave it off and don't try again. Did the machine come on, and did the switch stay up?"
+      hi: "उस switch को एक बार ऊपर कीजिए और machine चलाकर देखिए। अगर switch फिर से गिर जाए, तो उसे वैसे ही छोड़ दीजिए और दोबारा मत कीजिए। क्या machine on हुई और switch ऊपर ही रहा?"
+    outcomes:
+      fixed: {next: resolved, label: "Machine on, switch stayed up"}
+      trips_again: {next: esc_mcb_trip, label: "The switch fell down again"}
+      still_dead: {next: esc_no_power, label: "Switch up, machine still dead"}
+
+  ns_lid:
+    say:
+      en: "A top-loading machine won't start unless the lid is fully closed. Please check no clothes are caught in it, close it firmly, and press Start. Did it start?"
+      hi: "Top load machine तब तक start नहीं होती जब तक ढक्कन पूरा बंद न हो। देखिए कोई कपड़ा फँसा न हो, ढक्कन अच्छे से बंद कीजिए, और Start दबाइए। क्या machine चालू हुई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: ns_child_lock, label: "Lid closed, still won't start"}
+    sources: [lg_in_wm_codes]
+
+  ns_child_lock:
+    say:
+      en: "Do you see a lock symbol, or the letters C L, on the display?"
+      hi: "क्या display पर ताले का निशान, या C L लिखा दिख रहा है?"
+    outcomes:
+      lock_shown: {next: child_lock, label: "Yes, lock symbol or CL"}
+      no_lock: {next: ns_tap, label: "No lock symbol"}
+    sources: [lg_in_wm_codes]
+
+  child_lock:
+    say:
+      en: "That's the child lock. Press and hold the button with the lock symbol for about three to five seconds until the symbol goes away. On some machines it's two buttons pressed together, marked for child lock. Then press Start. Did it start?"
+      hi: "ये child lock है। ताले के निशान वाला button लगभग तीन से पाँच second दबाकर रखिए जब तक निशान हट न जाए। कुछ machines में child lock के लिए दो buttons एक साथ दबाने होते हैं। फिर Start दबाइए। क्या machine चालू हुई?"
+    outcomes:
+      fixed: {next: resolved, label: "Lock gone, it started"}
+      not_fixed: {next: ns_reset, label: "Couldn't unlock / still won't start"}
+    sources: [lg_in_wm_codes]
+
+  ns_tap:
+    say:
+      en: "Is the water tap for the machine fully open? Some machines wait if no water comes in."
+      hi: "क्या machine वाला पानी का tap पूरा खुला है? कुछ machines पानी न आने पर रुकी रहती हैं।"
+    outcomes:
+      fixed: {next: resolved, label: "Tap was closed; opened it and it started"}
+      already_open: {next: ns_reset, label: "Tap is open"}
+    sources: [lg_in_wm_codes]
+
+  ns_reset:
+    say:
+      en: "Let's restart it. Switch it off at the wall, pull out the plug, and wait two minutes. Then plug it back in and try a Rinse and Spin. Did it start?"
+      hi: "चलिए इसे restart करते हैं। Wall switch बंद कीजिए, plug निकालिए, और दो मिनट रुकिए। फिर plug लगाकर Rinse और Spin चलाइए। क्या machine चालू हुई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: esc_not_starting, label: "Still won't start"}
+    sources: [lg_in_wm_codes]
+
+  # ---- not filling (LG IE, Samsung 4C/4E) ---------------------------------------------
+  nf_tap:
+    say:
+      en: "Please check that the water tap the machine's hose is connected to is fully open."
+      hi: "कृपया check कीजिए कि जिस tap से machine का pipe जुड़ा है, वो पूरा खुला है।"
+    outcomes:
+      was_closed: {next: nf_confirm, label: "It was closed or half open; opened it"}
+      already_open: {next: nf_house_water, label: "Tap is fully open"}
+    sources: [lg_in_wm_codes, samsung_in_4c_5c]
+
+  nf_confirm:
+    say:
+      en: "Press Start again. Is water coming in now?"
+      hi: "फिर से Start दबाइए। क्या अब पानी आ रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, water is filling"}
+      not_fixed: {next: nf_house_water, label: "Still no water"}
+
+  nf_house_water:
+    say:
+      en: "Is water coming normally from the other taps in the house? Sometimes the overhead tank is empty or the pressure is low."
+      hi: "क्या घर के बाकी taps में पानी normal आ रहा है? कभी-कभी ऊपर की tank खाली होती है या pressure कम होता है।"
+    outcomes:
+      no_water_in_house: {next: resolved_no_water, label: "No water or very low pressure in the house"}
+      water_ok: {next: nf_hose, label: "Other taps are fine"}
+    sources: [lg_in_wm_codes]
+
+  nf_hose:
+    say:
+      en: "Please check the inlet hose, the pipe from the tap to the back of the machine. Make sure it isn't bent, twisted or squashed behind the machine, and straighten it if it is."
+      hi: "कृपया inlet pipe check कीजिए, जो tap से machine के पीछे जाता है। देखिए कि वो machine के पीछे मुड़ा, मरोड़ा या दबा हुआ न हो, और अगर है तो सीधा कर दीजिए।"
+    outcomes:
+      was_kinked: {next: nf_confirm2, label: "It was bent or squashed; straightened it"}
+      hose_ok: {next: nf_filter_offer, label: "Hose looks fine"}
+    sources: [lg_in_wm_codes, samsung_in_4c_5c]
+
+  nf_confirm2:
+    say:
+      en: "Press Start again. Is water coming in now?"
+      hi: "फिर से Start दबाइए। क्या अब पानी आ रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, filling now"}
+      not_fixed: {next: nf_filter_offer, label: "Still no water"}
+
+  nf_filter_offer:
+    say:
+      en: "There's a small mesh filter where the hose joins the machine, and it can get blocked. Cleaning it means closing the tap and unscrewing the hose by hand. Would you like to try that, or shall I book a technician?"
+      hi: "जहाँ pipe machine से जुड़ता है, वहाँ एक छोटी जाली वाला filter होता है जो block हो सकता है। उसे साफ़ करने के लिए tap बंद करके pipe हाथ से खोलना होता है। क्या आप ये करना चाहेंगे, या मैं technician book कर दूँ?"
+    outcomes:
+      try: {next: nf_filter_steps, label: "Will try cleaning the filter"}
+      later: {next: followup, label: "Will try it later"}
+      technician: {next: esc_not_filling, label: "Prefers a technician"}
+    sources: [samsung_in_4c_5c]
+
+  nf_filter_steps:
+    say:
+      en: "First switch the machine off, pull out the plug, and close the tap. Unscrew the hose from the back of the machine by hand, gently pull out the small mesh filter from the end, rinse it under the tap, and push it back in. Screw the hose back on hand-tight, open the tap, and check it doesn't leak. Tell me when it's done."
+      hi: "पहले machine बंद कीजिए, plug निकालिए, और tap बंद कीजिए। Machine के पीछे से pipe हाथ से खोलिए, उसके सिरे से छोटा जाली वाला filter धीरे से निकालिए, नल के नीचे धोइए, और वापस लगा दीजिए। Pipe हाथ से कसकर वापस लगाइए, tap खोलिए, और देखिए कि leak तो नहीं हो रहा। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: nf_confirm3, label: "Filter cleaned, hose back on"}
+      cant: {next: esc_not_filling, label: "Couldn't do it"}
+    sources: [samsung_in_4c_5c]
+
+  nf_confirm3:
+    say:
+      en: "Plug it back in and press Start. Is water coming in now?"
+      hi: "Plug वापस लगाइए और Start दबाइए। क्या अब पानी आ रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, filling now"}
+      not_fixed: {next: esc_not_filling, label: "Still no water"}
+
+  # ---- not draining (LG OE, Samsung 5C/5E) --------------------------------------------
+  nd_hot:
+    say:
+      en: "First, did you run a hot water wash? If so, the water inside can be very hot, so we should wait about an hour before checking anything."
+      hi: "पहले ये बताइए, क्या आपने गरम पानी वाला wash चलाया था? अगर हाँ, तो अंदर का पानी बहुत गरम हो सकता है, इसलिए कुछ भी check करने से पहले लगभग एक घंटा रुकना चाहिए।"
+    outcomes:
+      hot_wash: {next: followup_hot, label: "Yes, it was a hot wash"}
+      no_hot: {next: nd_hose, label: "No hot water used"}
+    sources: [samsung_in_4c_5c]
+
+  nd_hose:
+    say:
+      en: "Please check the drain hose, the grey pipe from the machine to the drain. Make sure it isn't bent or squashed, and isn't pushed too deep into the drain. Straighten it if needed."
+      hi: "कृपया drain pipe check कीजिए, जो grey pipe machine से नाली तक जाता है। देखिए कि वो मुड़ा या दबा न हो, और नाली में बहुत गहरा न घुसा हो। ज़रूरत हो तो सीधा कर दीजिए।"
+    outcomes:
+      was_kinked: {next: nd_confirm, label: "It was bent or too deep; fixed it"}
+      hose_ok: {next: nd_drain_point, label: "Hose looks fine"}
+    sources: [samsung_in_4c_5c, lg_in_wm_codes]
+
+  nd_confirm:
+    say:
+      en: "Now run a Spin or Drain cycle. Is the water draining?"
+      hi: "अब Spin या Drain चलाइए। क्या पानी निकल रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, draining now"}
+      not_fixed: {next: nd_drain_point, label: "Still not draining"}
+
+  nd_drain_point:
+    say:
+      en: "Is the floor drain or sink that the hose goes into draining normally, or is it blocked?"
+      hi: "जिस नाली या sink में pipe जाता है, क्या उसमें पानी normal निकल रहा है, या वो block है?"
+    outcomes:
+      drain_blocked: {next: resolved_drain_blocked, label: "The house drain is blocked"}
+      drain_ok: {next: nd_type, label: "The drain is fine"}
+
+  nd_type:
+    say:
+      en: "Is your machine top-loading, with the lid on top, or front-loading, with a round glass door?"
+      hi: "आपकी machine top load है, यानी ढक्कन ऊपर, या front load, यानी आगे गोल शीशे वाला दरवाज़ा?"
+    outcomes:
+      top: {next: nd_lint_filter, label: "Top load"}
+      front: {next: nd_front_offer, label: "Front load"}
+
+  nd_lint_filter:
+    say:
+      en: "Many top-loaders have a small lint filter on the inside wall of the drum. If you can see it, pull it out, empty the lint, rinse it, and click it back in. Then run a Drain or Spin. Is it draining now?"
+      hi: "कई top load machines में drum की अंदर वाली दीवार पर एक छोटा lint filter होता है। अगर दिखे तो उसे निकालिए, उसमें जमा रुआँ साफ़ कीजिए, धोइए, और वापस लगा दीजिए। फिर Drain या Spin चलाइए। क्या अब पानी निकल रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, draining now"}
+      not_fixed: {next: esc_not_draining, label: "Still not draining"}
+      no_filter: {next: esc_not_draining, label: "Can't find a filter"}
+    sources: [lg_in_wm_codes]
+
+  nd_front_offer:
+    say:
+      en: "Front-loaders have a drain filter behind a small cover at the bottom front. Opening it lets water out, so you'd need towels and a shallow tray. Would you like to try, or shall I book a technician?"
+      hi: "Front load machines में नीचे आगे की तरफ एक छोटे cover के पीछे drain filter होता है। उसे खोलने पर पानी निकलता है, इसलिए towel और एक चौड़ी tray चाहिए। क्या आप try करना चाहेंगे, या मैं technician book कर दूँ?"
+    outcomes:
+      try: {next: nd_front_steps, label: "Will try"}
+      later: {next: followup, label: "Will try it later"}
+      technician: {next: esc_not_draining, label: "Prefers a technician"}
+    sources: [lg_in_wm_codes, samsung_in_4c_5c]
+
+  nd_front_steps:
+    say:
+      en: "Switch the machine off and pull out the plug. Put towels and the tray under the small cover at the bottom front, and open the cover. Slowly turn the filter anticlockwise to let the water out, clear any coins, hair or lint, rinse it, and screw it back in firmly. Tell me when it's done."
+      hi: "Machine बंद कीजिए और plug निकालिए। नीचे आगे वाले छोटे cover के नीचे towel और tray रखिए, और cover खोलिए। Filter को धीरे-धीरे उल्टी दिशा में घुमाइए ताकि पानी निकल जाए, उसमें फँसे सिक्के, बाल या रुआँ निकालिए, धोइए, और वापस कसकर लगा दीजिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: nd_confirm2, label: "Filter cleaned and back in"}
+      cant: {next: esc_not_draining, label: "Couldn't do it"}
+    sources: [lg_in_wm_codes]
+
+  nd_confirm2:
+    say:
+      en: "Plug it back in and run a Drain or Spin. Is it draining now?"
+      hi: "Plug वापस लगाइए और Drain या Spin चलाइए। क्या अब पानी निकल रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, draining now"}
+      not_fixed: {next: esc_not_draining, label: "Still not draining"}
+
+  # ---- unbalanced (LG UE, Samsung UE/Ub) -----------------------------------------------
+  ub_spread:
+    say:
+      en: "The load is probably unbalanced. Please open the lid, spread the clothes evenly around the drum, and if there's one heavy item like a blanket, wash it on its own. Then start a Spin again. Is it spinning now?"
+      hi: "शायद कपड़े एक तरफ जमा हो गए हैं। ढक्कन खोलिए, कपड़ों को drum में चारों तरफ बराबर फैला दीजिए, और अगर कोई भारी चीज़ जैसे कंबल है, तो उसे अलग से धोइए। फिर Spin दोबारा चलाइए। क्या अब spin हो रही है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, spinning now"}
+      not_fixed: {next: ub_level, label: "Still stops or shakes"}
+    sources: [lg_in_wm_codes, samsung_us_wm_codes]
+
+  ub_level:
+    say:
+      en: "Is the machine standing firmly on a flat floor, without rocking when you press down on its corners? Please don't try to lift or tilt it yourself."
+      hi: "क्या machine समतल फ़र्श पर मज़बूती से खड़ी है, कोनों पर दबाने से हिलती तो नहीं? कृपया उसे खुद उठाने या झुकाने की कोशिश मत कीजिए।"
+    outcomes:
+      rocks: {next: esc_levelling, label: "It rocks / isn't level"}
+      steady: {next: esc_unbalanced, label: "It's steady"}
+    sources: [lg_in_wm_codes]
+
+  # ---- lid / door -----------------------------------------------------------------
+  lid_close:
+    say:
+      en: "Please check nothing is caught in the lid or door, then close it firmly until it clicks, and press Start. Did it start?"
+      hi: "देखिए ढक्कन या दरवाज़े में कुछ फँसा न हो, फिर उसे अच्छे से बंद कीजिए जब तक click की आवाज़ न आए, और Start दबाइए। क्या machine चालू हुई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: lid_reset, label: "Still shows the lid or door problem"}
+    sources: [lg_in_wm_codes, samsung_us_wm_codes]
+
+  lid_reset:
+    say:
+      en: "Let's restart it. Switch it off at the wall, pull out the plug, and wait two minutes. Then plug it back in, close the lid firmly, and press Start. Did it start?"
+      hi: "चलिए restart करते हैं। Wall switch बंद कीजिए, plug निकालिए, और दो मिनट रुकिए। फिर plug लगाइए, ढक्कन अच्छे से बंद कीजिए, और Start दबाइए। क्या machine चालू हुई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: esc_lid_lock, label: "Same problem"}
+    sources: [lg_in_wm_codes]
+
+  lid_wont_open:
+    say:
+      en: "The door usually unlocks a minute or two after the cycle ends. If there's still water inside, run a Drain or Spin first. Did the door open?"
+      hi: "Cycle खत्म होने के एक-दो मिनट बाद दरवाज़ा आमतौर पर खुल जाता है। अगर अंदर अभी भी पानी है, तो पहले Drain या Spin चलाइए। क्या दरवाज़ा खुला?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it opened"}
+      not_fixed: {next: esc_lid_lock, label: "Still locked"}
+    sources: [lg_in_wm_codes]
+
+  # ---- error code ------------------------------------------------------------------
+  error_code:
+    say:
+      en: "Which brand is the machine, the name on the front, and what exactly does the display show?"
+      hi: "Machine किस brand की है, यानी आगे क्या नाम लिखा है, और display पर ठीक-ठीक क्या दिख रहा है?"
+    outcomes:
+      code_given: {next: esc_error_code, label: "Caller gave the code (use record_error_code)"}
+      no_code: {next: triage, label: "No code after all"}
+    sources: [lg_in_wm_codes, samsung_in_4c_5c]
+
+  code_restart:
+    say:
+      en: "Let's try a restart. Switch it off at the wall, pull out the plug, and wait two minutes. Then plug it back in and run a Rinse and Spin. Does the same code come back?"
+      hi: "चलिए restart करके देखते हैं। Wall switch बंद कीजिए, plug निकालिए, और दो मिनट रुकिए। फिर plug लगाकर Rinse और Spin चलाइए। क्या वही code फिर से आ रहा है?"
+    outcomes:
+      cleared: {next: resolved, label: "Code is gone, machine works"}
+      code_back: {next: esc_error_code, label: "Same code came back"}
+    sources: [lg_in_wm_codes]
+
+  # ---- leaking / noise -------------------------------------------------------------
+  lk_where:
+    say:
+      en: "Where is the water coming from: the tap connection at the back, the drain hose, or from under the machine?"
+      hi: "पानी कहाँ से आ रहा है: पीछे tap वाले joint से, drain pipe से, या machine के नीचे से?"
+    outcomes:
+      tap_joint: {next: lk_tighten, label: "Tap / inlet joint"}
+      inlet_broken: {next: lk_close_tap, label: "The inlet pipe or its adapter is broken or cracked"}
+      drain_hose: {next: nd_hose, label: "Drain hose"}
+      under_machine: {next: esc_leak, label: "From under the machine"}
+    sources: [samsung_wm_leak]
+
+  lk_close_tap:
+    say:
+      en: "Please close the tap that feeds the machine and keep it closed, and don't run the machine until the pipe is replaced. Is the tap closed now and the water stopped?"
+      hi: "कृपया machine वाला tap बंद कीजिए और बंद ही रखिए, और pipe बदलने तक machine मत चलाइए। क्या tap बंद हो गया और पानी रुक गया?"
+    outcomes:
+      stopped: {next: esc_inlet_broken, label: "Tap closed, water stopped"}
+      still_flowing: {next: esc_inlet_broken, label: "Water is still coming"}
+    sources: [samsung_wm_leak]
+
+  lk_tighten:
+    say:
+      en: "Please close the tap, then tighten the hose connector at the tap by hand only, no tools. Open the tap again. Is it still leaking?"
+      hi: "कृपया tap बंद कीजिए, फिर tap पर लगे pipe के connector को सिर्फ हाथ से कसिए, किसी tool से नहीं। फिर tap खोलिए। क्या अभी भी leak हो रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Leak stopped"}
+      not_fixed: {next: esc_leak, label: "Still leaking"}
+    sources: [samsung_in_4c_5c]
+
+  noise_check:
+    say:
+      en: "Sometimes coins, hairpins or buttons make a rattling noise. Please check the pockets and the drum for anything loose. Is the noise gone?"
+      hi: "कभी-कभी सिक्के, hairpin या button की वजह से खड़खड़ की आवाज़ आती है। जेबें और drum check कीजिए कि कुछ ढीला तो नहीं पड़ा। क्या आवाज़ बंद हुई?"
+    outcomes:
+      fixed: {next: resolved, label: "Found something; noise gone"}
+      not_fixed: {next: esc_noise, label: "Noise continues"}
+    sources: [lg_in_wm_codes]
+
+  # ---- endings -----------------------------------------------------------------------
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "That's great, the machine is working again!"
+      hi: "बहुत बढ़िया, machine फिर से चल रही है!"
+  resolved_no_water:
+    kind: resolve
+    resolution: no_fault_water_supply
+    say:
+      en: "Then the machine is fine; it needs normal water pressure to fill. Once the water supply is back, it should work. Call us again if it doesn't."
+      hi: "तो machine में कोई खराबी नहीं है; उसे भरने के लिए normal पानी का pressure चाहिए। पानी आते ही ये चल जानी चाहिए। न चले तो हमें फिर call कीजिए।"
+  resolved_drain_blocked:
+    kind: resolve
+    resolution: no_fault_house_drain
+    say:
+      en: "Then the machine is fine; the house drain needs clearing first, by a plumber if needed. Once it drains freely, the machine will work normally."
+      hi: "तो machine में कोई खराबी नहीं है; पहले घर की नाली साफ़ करवानी होगी, ज़रूरत हो तो plumber से। नाली ठीक होते ही machine normal चलेगी।"
+  resolved_tub_clean:
+    kind: resolve
+    resolution: no_fault_reminder
+    say:
+      en: "Good news, that code isn't a fault. It's a reminder to run the Tub Clean cycle with the drum empty. Once you run it, the reminder goes away."
+      hi: "अच्छी खबर, ये code कोई खराबी नहीं है। ये खाली drum के साथ Tub Clean cycle चलाने की याद दिलाता है। एक बार चला देंगे तो ये हट जाएगा।"
+    sources: [lg_in_wm_codes]
+  resolved_power_failure:
+    kind: resolve
+    resolution: no_fault_power_cut
+    say:
+      en: "That code only means the power went off during the wash. It isn't a fault. Just press Start again to continue."
+      hi: "इस code का मतलब बस इतना है कि wash के बीच बिजली चली गई थी। ये कोई खराबी नहीं है। आगे चलाने के लिए Start फिर से दबा दीजिए।"
+    sources: [lg_in_wm_codes]
+  followup_hot:
+    kind: followup
+    followup_minutes: 60
+    say:
+      en: "Let's be safe and let it cool for an hour. I'll message you on WhatsApp in an hour, and we can continue then, or I can book a technician."
+      hi: "Safety के लिए इसे एक घंटा ठंडा होने दीजिए। मैं एक घंटे में आपको WhatsApp पर message करूँगी, तब हम आगे देख लेंगे, या मैं technician book कर दूँगी।"
+  followup:
+    kind: followup
+    followup_minutes: 30
+    say:
+      en: "No problem. I'll message you on WhatsApp in about 30 minutes. If it still isn't working, just reply and I'll book a technician."
+      hi: "कोई बात नहीं। मैं लगभग 30 मिनट में WhatsApp पर message करूँगी। अगर तब भी ठीक न हो, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  esc_no_power:
+    kind: escalate
+    likely_cause: "Machine gets no power with socket/MCB checked"
+    technician_note: "Check power cord, door switch and control board"
+  esc_mcb_trip:
+    kind: escalate
+    say:
+      en: "Please keep that switch off and don't use the machine until our technician checks it."
+      hi: "कृपया वो switch बंद ही रहने दीजिए और technician के check करने तक machine मत चलाइए।"
+    likely_cause: "Machine trips the MCB: possible electrical leakage"
+    technician_note: "Electrical leakage test; customer told not to reset the MCB again"
+  esc_not_starting:
+    kind: escalate
+    likely_cause: "Won't start with power, lid, child lock and tap checked"
+    technician_note: "Check lid switch and control board"
+  esc_not_filling:
+    kind: escalate
+    likely_cause: "Not filling with tap open and house water normal: inlet valve or filter"
+    technician_note: "Carry inlet valve; clean inlet filter"
+  esc_not_draining:
+    kind: escalate
+    likely_cause: "Not draining with hose and house drain fine: drain pump or blockage"
+    technician_note: "Check drain pump and filter; carry drain pump"
+  esc_unbalanced:
+    kind: escalate
+    likely_cause: "Repeated unbalance on a steady machine: suspension or sensor"
+    technician_note: "Check suspension rods and dampers"
+  esc_levelling:
+    kind: escalate
+    likely_cause: "Machine not level / rocking"
+    technician_note: "Level the machine feet"
+  esc_lid_lock:
+    kind: escalate
+    likely_cause: "Lid or door lock fault"
+    technician_note: "Carry lid lock / door switch"
+  esc_error_code:
+    kind: escalate
+    likely_cause: "Error code on display (see code and brand)"
+    technician_note: "Look up the code for this model before the visit"
+  esc_inlet_broken:
+    kind: escalate
+    likely_cause: "Inlet hose or tap adapter broken / cracked"
+    technician_note: "Carry an inlet hose and tap adapter"
+  esc_leak:
+    kind: escalate
+    say:
+      en: "Please close the machine's water tap and don't use the machine until our technician checks it."
+      hi: "कृपया machine का पानी वाला tap बंद कर दीजिए और technician के check करने तक machine मत चलाइए।"
+    likely_cause: "Water leak from the machine body or base"
+    technician_note: "Check tub seal, hoses and pump housing"
+  esc_noise:
+    kind: escalate
+    likely_cause: "Abnormal noise during wash or spin"
+    technician_note: "Check drum bearing, pulley and belt"

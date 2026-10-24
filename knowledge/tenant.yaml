@@ -1,0 +1,33 @@
+# The company FixFirst answers for. Everything company-specific lives here and in
+# knowledge/playbooks, so a second rental/service company is a new folder, not new code.
+id: rentbasket
+name: RentBasket
+agent_name: Priya            # spoken name of the voice agent; matches the Bulbul voice below
+tts_speaker: priya           # bulbul:v3 speaker (lowercase short name)
+default_language: hi         # hi = Hindi/Hinglish, en = English; the agent follows the caller
+service_area: Gurgaon & Noida
+# Public number from the rentbasket.com footer (Gurgaon office). Confirm before going live.
+support_phone: "+91 99588 58473"
+
+# Who receives ticket summaries on WhatsApp (international format, no "+").
+# ASK: the service desk / technician group numbers. Empty = messages only go to the outbox.
+team_whatsapp: []
+# ASK: a named on-call owner for urgent safety tickets, and the callback promise.
+on_call_name: "Service desk (set a named on-call owner)"
+urgent_callback_minutes: 15
+
+# What the agent may promise for a normal technician visit. ASK: confirm with ops.
+normal_visit_promise:
+  en: "Our service team will call you to fix a visit time, usually within the same or next working day."
+  hi: "हमारी service team आपको visit का time fix करने के लिए call करेगी, आमतौर पर उसी दिन या अगले working day।"
+
+emergency_numbers:
+  national: "112"            # police / fire / ambulance
+  fire: "101"
+  lpg: "1906"                # LPG emergency (all oil companies)
+
+# Hours after a phone fix to ask on WhatsApp whether it is still working.
+followup_hours: 24
+
+# ASK: average cost of one technician visit, so the ops page can show savings in rupees.
+technician_visit_cost_inr: 0
