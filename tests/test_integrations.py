@@ -230,3 +230,33 @@ def test_lookup_by_phone_on_the_call_page(phone):
     c = phone.post("/api/customers/lookup", json={"phone": "98100 00000"}).json()
     assert c["name"] == "Test Customer" and {r["appliance"] for r in c["rentals"]} >= {"tv", "fridge", "ac", "washer", "furniture"}
     assert phone.post("/api/customers/lookup", json={"phone": "9999999999"}).status_code == 404
+
+
+def test_bolna_call_without_prompt_variables_is_matched_through_the_webhook(phone):
+    # Live behaviour: Bolna leaves {execution_id}/{from_number} unfilled, but its status webhooks arrive
+    # first with the execution id and the numbers.
+    from fixfirst.bolna import webhook_token
+    hook = f"/bolna/webhook/{webhook_token('ff_test')}"
+    phone.post(hook, json={"id": "exec-77", "status": "in-progress",
+                           "telephony_data": {"to_number": "+919810000000", "from_number": "+918000000000"}})
+    body = _body("mera TV kharab hai")
+    body["messages"][0]["content"] = "FIXFIRST_CALL call_ref={execution_id} from={from_number} to={to_number}"
+    phone.llm.responses.append(LLMResult(tool_calls=[call("say", text="Ji, bataiye.", language="hi")]))
+    r = phone.post("/bolna/v1/chat/completions", json=body, headers=AUTH)
+    assert _spoken(r) == "Ji, bataiye."
+    calls = phone.get("/api/calls").json()
+    assert calls[0]["customer_id"] == "RB9810000000"   # found through the webhook's number
+    r = phone.post(hook, json={"id": "exec-77", "status": "completed", "transcript": "user: mera TV kharab hai"})
+    assert r.json()["status"] == "completed"
+
+
+def test_webhook_matches_an_anonymous_conversation_by_its_first_words(phone):
+    from fixfirst.bolna import webhook_token
+    body = _body("fridge leak kar raha hai")
+    body["messages"][0]["content"] = "FIXFIRST_CALL call_ref={execution_id}"
+    phone.llm.responses.append(LLMResult(tool_calls=[call("say", text="Theek hai.", language="hi")]))
+    phone.post("/bolna/v1/chat/completions", json=body, headers=AUTH)
+    r = phone.post(f"/bolna/webhook/{webhook_token('ff_test')}",
+                   json={"id": "exec-88", "status": "completed", "transcript": "assistant: ...\nuser: fridge leak kar raha hai"})
+    assert r.json()["status"] == "completed"
+
