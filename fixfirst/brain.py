@@ -235,6 +235,10 @@ PHRASES = {
         "hi": "क्या मैं आपकी और कोई मदद कर सकती हूँ?",
         "en": "Is there anything else I can help you with?",
     },
+    "safety_goodbye": {
+        "hi": "ठीक है, आप सुरक्षित रहिए। हमारी team {minutes} मिनट के अंदर आपको call करेगी। नमस्ते!",
+        "en": "Alright, please stay safe. Our team will call you within {minutes} minutes. Goodbye!",
+    },
     "goodbye": {
         "hi": "ठीक है! {company} को call करने के लिए धन्यवाद। आपका दिन शुभ हो!",
         "en": "Alright! Thank you for calling {company}. Have a nice day!",
@@ -401,6 +405,13 @@ class Brain:
             speech = await self._hazard(hazard.kind, source="screen", evidence=hazard.matched)
             self.s.messages.append({"role": "assistant", "content": speech})
             result = TurnResult(speech=speech, hazard=hazard.kind)
+        elif self.s.hazard and not self.s.end_requested and caller_is_done(text):
+            # After the safety script, "theek hai / thank you" ends the call with a short safe goodbye.
+            speech = self._phrase("safety_goodbye", minutes=self.tenant.urgent_callback_minutes)
+            self.s.end_requested = True
+            self.s.messages.append({"role": "assistant", "content": speech})
+            self.s.publish("goodbye")
+            result = TurnResult(speech=speech, hazard=self.s.hazard)
         elif self.s.closed and self.s.asked_anything_else and not self.s.end_requested and caller_is_done(text):
             # The problem is closed, we asked "anything else?", and the caller is done: say goodbye. On a
             # phone call the Bolna bridge then tells Bolna to hang up (see bolna.py hangup_answer).

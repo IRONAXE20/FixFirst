@@ -68,6 +68,7 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     screen = get_screen()
     docs = DocLibrary()
     ticket_service = TicketService(engine, WhatsApp(settings, engine), tenant, settings)
+    ticket_service.notify_in_background = True
     store = SessionStore(engine, tenant)
     brains: dict[str, Brain] = {}
     bot_tasks: set[asyncio.Task] = set()

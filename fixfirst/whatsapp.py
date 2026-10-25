@@ -21,6 +21,12 @@ def template_param(value: str, limit: int = 1000) -> str:
     return value if len(value) <= limit else value[: limit - 1] + "…"
 
 
+def mask(phone: str | None) -> str:
+    """Phone numbers in logs keep only the last 4 digits."""
+    digits = "".join(ch for ch in phone or "" if ch.isdigit())
+    return f"…{digits[-4:]}" if digits else "none"
+
+
 def to_e164_digits(phone: str) -> str:
     digits = "".join(ch for ch in phone if ch.isdigit())
     return "91" + digits if len(digits) == 10 else digits
@@ -63,7 +69,7 @@ class WhatsApp:
             except httpx.HTTPError as e:
                 status, error = "failed", str(e)
             if error:
-                logger.warning(f"WhatsApp send to {to} failed: {error}")
+                logger.warning(f"WhatsApp send to {mask(to)} failed: {error}")
         with self.engine.begin() as c:
             c.execute(insert(outbox).values(to=to, audience=audience, kind=kind, body=body, status=status,
                                             error=error, ticket_code=ticket_code, call_id=call_id,

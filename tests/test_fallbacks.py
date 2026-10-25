@@ -36,3 +36,9 @@ def test_demo_brain_reads_error_codes():
     assert _code("machine pe IE aa raha hai") == "IE"
     assert _code("it shows F05") == "F05"
     assert _code("Samsung 4C") == "4C"
+
+
+def test_whatsapp_logs_mask_phone_numbers():
+    from fixfirst.whatsapp import mask
+    assert mask("+91 98765 43210") == "…3210" and mask(None) == "none"
+

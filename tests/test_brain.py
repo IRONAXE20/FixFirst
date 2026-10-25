@@ -583,3 +583,12 @@ def test_another_problem_after_anything_else_is_not_a_goodbye(env):
     run(brain.respond("haan, fridge bhi leak kar raha hai"))
     assert not session.end_requested
 
+
+def test_safety_call_ends_with_a_safe_goodbye(env):
+    brain, session, _ = env.make([])
+    run(brain.respond("AC se jalne ki smell aa rahi hai"))
+    assert session.hazard == "electrical"
+    speech = run(brain.respond("theek hai"))
+    assert speech.speech == brain._phrase("safety_goodbye", minutes=env.tenant.urgent_callback_minutes)
+    assert session.end_requested
+

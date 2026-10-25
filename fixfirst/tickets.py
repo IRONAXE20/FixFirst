@@ -1,4 +1,5 @@
 """Tickets, the technician handoff, WhatsApp messages, follow-ups and call records."""
+import asyncio
 import secrets
 from datetime import timedelta
 
@@ -13,6 +14,10 @@ from .whatsapp import WhatsApp
 
 
 class TicketService:
+    # The server sets this: the live safety turn took 3.8 s because the reply waited on Meta's API.
+    notify_in_background = False
+    _pending: set = set()
+
     def __init__(self, engine: Engine, whatsapp: WhatsApp, tenant: Tenant, settings: Settings):
         self.engine = engine
         self.whatsapp = whatsapp
@@ -43,7 +48,12 @@ class TicketService:
             from . import photos as photo_store
             photo_store.link_ticket(self.engine, session.photos, code)
         session.publish("ticket", ticket=ticket)
-        await self._notify(session, ticket)
+        if self.notify_in_background:   # the caller hears the reply now; WhatsApp goes out meanwhile
+            task = asyncio.create_task(self._notify_safely(session, ticket))
+            self._pending.add(task)
+            task.add_done_callback(self._pending.discard)
+        else:
+            await self._notify(session, ticket)
         self.persist_call(session)
         return ticket
 
@@ -112,6 +122,12 @@ class TicketService:
         return (f"{self.tenant.name} FixFirst: a technician is booked for your {name} (ticket {ticket['code']}). "
                 f"{promise} A photo of the problem or the display helps the technician come prepared: "
                 f"{ticket['photo_url']}")
+
+    async def _notify_safely(self, session: CallSession, ticket: dict) -> None:
+        try:
+            await self._notify(session, ticket)
+        except Exception as e:   # a WhatsApp failure must never surface in the call
+            logger.exception(f"WhatsApp notification for {ticket['code']} failed: {e}")
 
     async def _notify(self, session: CallSession, ticket: dict) -> None:
         team_body = self.team_message(ticket, session.id)
