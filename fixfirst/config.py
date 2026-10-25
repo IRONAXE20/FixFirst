@@ -51,6 +51,8 @@ class Settings:
     bolna_api_key: str = ""
     bolna_agent_id: str = ""
     fixfirst_llm_key: str = ""            # the key Bolna sends when it calls our brain as its custom LLM
+    admin_key: str = ""                   # needed to edit playbooks on /knowledge (editing is off without it)
+    photo_retention_days: int = 7         # photos are deleted this many days after their ticket is closed
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -88,6 +90,8 @@ class Settings:
             bolna_api_key=_env("BOLNA_API_KEY"),
             bolna_agent_id=_env("BOLNA_AGENT_ID"),
             fixfirst_llm_key=_env("FIXFIRST_LLM_KEY"),
+            admin_key=_env("ADMIN_KEY"),
+            photo_retention_days=int(_env("PHOTO_RETENTION_DAYS", "7")),
         )
 
     @property

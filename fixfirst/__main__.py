@@ -26,6 +26,12 @@ def main() -> None:
     bs.add_argument("--telephony", default="plivo", help="Bolna telephony provider: plivo, vobiz, exotel, twilio")
     bc = sub.add_parser("bolna-call", help="Have the Bolna agent call a phone number")
     bc.add_argument("phone")
+    bc.add_argument("--as", dest="as_customer", help="Look the caller up as this RentBasket customer's number "
+                                                     "(testing only: customer WhatsApp messages are not sent)")
+    pb = sub.add_parser("playbooks", help="Copy playbooks between the YAML files and the database")
+    pb.add_argument("action", choices=["import", "export"],
+                    help="import: store every YAML file as a new version; export: write the database copy to YAML")
+    pb.add_argument("--out", default="knowledge/playbooks", help="Folder for export")
     args = parser.parse_args()
 
     if sys.platform == "win32":
@@ -70,7 +76,22 @@ def main() -> None:
         from .bolna_admin import place_call
         from .config import get_settings
 
-        print(place_call(get_settings(), args.phone))
+        print(place_call(get_settings(), args.phone, as_customer=args.as_customer))
+    elif args.cmd == "playbooks":
+        from pathlib import Path
+
+        from . import playbook_store
+        from .config import ROOT as root
+        from .db import get_engine
+        from .playbooks import get_library
+
+        engine, library = get_engine(), get_library()
+        playbook_store.sync(engine, library)
+        if args.action == "import":
+            print("Stored as new versions:", ", ".join(playbook_store.import_files(engine, library)))
+        else:
+            out = Path(args.out) if Path(args.out).is_absolute() else root / args.out
+            print("Wrote:", ", ".join(str(p) for p in playbook_store.export_files(engine, out)))
 
 
 if __name__ == "__main__":

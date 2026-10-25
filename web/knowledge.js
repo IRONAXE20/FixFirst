@@ -45,11 +45,67 @@ async function showPlaybook(id) {
   const order = orderNodes(pb);
   $("main").innerHTML = `
     <div class="row" style="justify-content:space-between; flex-wrap:wrap">
-      <div><h2 style="font-size:18px">${esc(pb.title.en)}</h2><div class="muted small">${esc(pb.title.hi)} · <span class="mono">knowledge/playbooks/${esc(pb.appliance)}.yaml</span></div></div>
-      <span class="badge ${pb.status === "reviewed" ? "ok" : "warn"}">${pb.status === "reviewed" ? `reviewed by ${esc(pb.reviewed_by || "")}` : "draft · unreviewed"}</span>
+      <div><h2 style="font-size:18px">${esc(pb.title.en)}</h2><div class="muted small">${esc(pb.title.hi)} · <span class="mono">${esc(pb.id)}</span>${listed(id)?.version ? ` · version ${listed(id).version}` : ""}</div></div>
+      <div class="row"><span class="badge ${pb.status === "reviewed" ? "ok" : "warn"}">${pb.status === "reviewed" ? `reviewed by ${esc(pb.reviewed_by || "")}` : "draft · unreviewed"}</span>
+        <button class="btn" id="edit-btn">✏️ Edit</button></div>
     </div>
     ${Object.keys(pb.routes || {}).length ? `<p class="small muted">Error-code routes: ${Object.entries(pb.routes).map(([r, n]) => `<span class="mono">${esc(r)}</span> → <a href="#n-${esc(n)}">${esc(n)}</a>`).join(", ")}</p>` : ""}
     <div style="margin-top:12px">${order.map(nodeCard).join("")}</div>`;
+  $("edit-btn").addEventListener("click", () => showEditor(id));
+}
+
+const listed = (id) => playbooks.find((p) => p.id === id);
+const store = {
+  get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+
+async function showEditor(id) {
+  selectItem(id);
+  const src = await api(`/api/playbooks/${id}/source`);
+  $("main").innerHTML = `
+    <div class="row" style="justify-content:space-between; flex-wrap:wrap">
+      <div><h2 style="font-size:18px">Edit ${esc(id)}</h2><div class="muted small">Editing version ${src.version}. Spoken text is in <span class="mono">say.hi</span> / <span class="mono">say.en</span>; answers in <span class="mono">outcomes</span>.</div></div>
+      <button class="btn ghost" id="back-btn">← Back to steps</button>
+    </div>
+    ${src.editing ? "" : `<div class="banner warn" style="margin-top:10px"><span>⚠️</span><span>Editing is switched off on this server (no <span class="mono">ADMIN_KEY</span> set). You can still validate changes.</span></div>`}
+    <div class="edit-bar">
+      <input id="ed-by" placeholder="Your name" value="${esc(store.get("ff-editor-name"))}">
+      <input id="ed-key" type="password" placeholder="Admin key" value="${esc(store.get("ff-admin-key"))}">
+      <button class="btn" id="ed-validate">Check</button>
+      <button class="btn primary" id="ed-save">Save as version ${src.version + 1}</button>
+      <span id="ed-msg"></span>
+    </div>
+    <ul class="errs" id="ed-errs"></ul>
+    <textarea class="editor" id="ed-text" spellcheck="false">${esc(src.yaml)}</textarea>
+    <h2 style="margin-top:16px">History</h2>
+    <table class="table"><tr><th>Version</th><th>Saved</th><th>By</th></tr>
+      ${src.history.map((h) => `<tr><td>${h.version}</td><td>${esc(new Date(h.saved_at + "Z").toLocaleString())}</td><td>${esc(h.saved_by || "")}</td></tr>`).join("")}</table>`;
+  const show = (ok, msg, errors = []) => {
+    $("ed-msg").innerHTML = msg ? `<span class="${ok ? "ok-msg" : "muted small"}">${esc(msg)}</span>` : "";
+    $("ed-errs").innerHTML = errors.map((e) => `<li>${esc(e)}</li>`).join("");
+  };
+  $("back-btn").addEventListener("click", () => showPlaybook(id));
+  $("ed-validate").addEventListener("click", async () => {
+    const r = await api(`/api/playbooks/${id}/validate`, { yaml: $("ed-text").value });
+    r.ok ? show(true, `Looks good: ${r.steps} steps, nothing broken.`) : show(false, "Not saved. Fix these first:", r.errors);
+  });
+  $("ed-save").addEventListener("click", async () => {
+    store.set("ff-editor-name", $("ed-by").value);
+    store.set("ff-admin-key", $("ed-key").value);
+    const res = await fetch(`/api/playbooks/${id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json", "X-Admin-Key": $("ed-key").value },
+      body: JSON.stringify({ yaml: $("ed-text").value, by: $("ed-by").value, base_version: src.version }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      playbooks = await api("/api/playbooks");
+      show(true, `Saved as version ${data.version}. Calls use it from now on.`);
+      setTimeout(() => showPlaybook(id), 900);
+    } else {
+      show(false, data.detail || "Not saved. Fix these first:", data.errors || []);
+    }
+  });
 }
 
 function orderNodes(pb) {

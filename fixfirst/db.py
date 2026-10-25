@@ -2,7 +2,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer, MetaData, String, Table, Text,
+from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer, LargeBinary, MetaData, String, Table, Text,
                         create_engine, select)
 from sqlalchemy.engine import Engine
 from sqlalchemy.schema import CreateSchema
@@ -84,6 +84,39 @@ outbox = Table(
     Column("ticket_code", String(16)),
     Column("call_id", String(32)),
     Column("created_at", DateTime, nullable=False),
+)
+
+photos = Table(
+    "photos", metadata,
+    Column("id", String(32), primary_key=True),
+    Column("call_id", String(32), index=True),
+    Column("ticket_code", String(16), index=True),
+    Column("content_type", String(40), nullable=False),
+    Column("size", Integer, nullable=False),
+    Column("data", LargeBinary, nullable=False),
+    Column("created_at", DateTime, nullable=False),
+)
+
+# Playbooks live here (the YAML files in knowledge/playbooks seed an empty table and are the export format).
+playbook_docs = Table(
+    "playbooks", metadata,
+    Column("id", String(60), primary_key=True),
+    Column("appliance", String(32), nullable=False),
+    Column("status", String(24), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("doc", JSON, nullable=False),
+    Column("updated_at", DateTime, nullable=False),
+    Column("updated_by", String(80)),
+)
+
+playbook_history = Table(
+    "playbook_history", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("playbook_id", String(60), nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("doc", JSON, nullable=False),
+    Column("saved_at", DateTime, nullable=False),
+    Column("saved_by", String(80)),
 )
 
 followups = Table(

@@ -39,6 +39,9 @@ class TicketService:
                   "summary": summary, "photo_token": token, "photo_url": self.photo_url(token),
                   "created_at": now.isoformat()}
         session.ticket = ticket
+        if session.photos:
+            from . import photos as photo_store
+            photo_store.link_ticket(self.engine, session.photos, code)
         session.publish("ticket", ticket=ticket)
         await self._notify(session, ticket)
         self.persist_call(session)
@@ -115,7 +118,8 @@ class TicketService:
         for number in self.tenant.team_whatsapp or [None]:
             await self.whatsapp.send(number, "team", f"ticket_{ticket['category']}", team_body,
                                      ticket_code=ticket["code"], call_id=session.id)
-        await self.whatsapp.send(session.caller_phone, "customer", f"ticket_{ticket['category']}",
+        await self.whatsapp.send(None if session.test_call else session.caller_phone, "customer",
+                                 f"ticket_{ticket['category']}",
                                  self.customer_message(ticket, session), ticket_code=ticket["code"],
                                  call_id=session.id)
         session.publish("whatsapp", audience="team", body=team_body)
@@ -144,6 +148,9 @@ class TicketService:
 
     # ---- follow-ups ------------------------------------------------------------------
     def schedule_followup(self, session: CallSession, minutes: int, kind: str, body: str) -> None:
+        if session.test_call:   # a `bolna-call --as` test: never message the real customer later
+            session.publish("followup", kind=kind, minutes=minutes, skipped="test call")
+            return
         with self.engine.begin() as c:
             c.execute(insert(followups).values(
                 call_id=session.id, customer_id=(session.customer or {}).get("id"), kind=kind,

@@ -50,6 +50,7 @@ class CallSession:
     safety_rejects: int = 0
     water_clarified: bool = False
     asked_anything_else: bool = False
+    test_call: bool = False            # placed with `bolna-call --as`: no WhatsApp or follow-ups to the customer
     end_requested: bool = False        # the caller is done and the goodbye was said: the call may hang up
     outcome: str = "in_progress"
     resolution: str | None = None

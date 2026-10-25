@@ -304,3 +304,17 @@ def test_caller_saying_cut_the_call_still_reaches_the_brain(phone):
     r = phone.post("/bolna/v1/chat/completions", json=_body("please don't cut the call, my AC is broken"), headers=AUTH)
     assert _spoken(r) == "Ji, bataiye."
 
+
+
+def test_bolna_call_as_a_customer_is_a_test_call(phone):
+    from fixfirst.bolna import webhook_token
+    hook = f"/bolna/webhook/{webhook_token('ff_test')}"
+    phone.post(hook, json={"id": "exec-55", "status": "initiated", "context_details": {"recipient_data": {
+        "test_customer_phone": "+919810000000"}}, "telephony_data": {"to_number": "+917000000000"}})
+    body = _body("AC kharab hai")
+    body["messages"][0]["content"] = "FIXFIRST_CALL call_ref={execution_id}"
+    phone.llm.responses.append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", language="hi")]))
+    phone.post("/bolna/v1/chat/completions", json=body, headers=AUTH)
+    assert phone.get("/api/calls").json()[0]["customer_id"] == "RB9810000000"
+    customer_msgs = [m for m in phone.get("/api/outbox").json() if m["audience"] == "customer"]
+    assert customer_msgs and all(m["to"] is None for m in customer_msgs)   # nothing to the real customer

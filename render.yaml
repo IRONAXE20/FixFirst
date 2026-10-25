@@ -42,3 +42,7 @@ services:
         sync: false
       - key: WHATSAPP_TOKEN
         sync: false
+      - key: ADMIN_KEY
+        sync: false
+      - key: PHOTO_RETENTION_DAYS
+        value: "7"

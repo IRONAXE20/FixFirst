@@ -122,15 +122,23 @@ def setup(settings: Settings, tenant: Tenant, public_url: str, telephony: str = 
     return agent_id
 
 
-def place_call(settings: Settings, phone: str) -> dict:
+def _e164(phone: str) -> str:
     digits = re.sub(r"\D", "", phone)
-    if len(digits) == 10:
-        digits = "91" + digits
+    return f"+91{digits}" if len(digits) == 10 else f"+{digits}"
+
+
+def place_call(settings: Settings, phone: str, as_customer: str | None = None) -> dict:
+    """Ring `phone`. With `as_customer`, the agent looks the caller up as that RentBasket number instead
+    (to test customer recognition from your own phone); the call is marked as a test, so no customer
+    WhatsApp messages or follow-ups go to that real customer."""
     if not settings.bolna_agent_id:
         raise SystemExit("BOLNA_AGENT_ID is not set; run bolna-setup first")
+    user_data = {"customer_phone": _e164(phone)}
+    if as_customer:
+        user_data = {"test_customer_phone": _e164(as_customer)}
     with _client(settings) as c:
-        r = c.post("/call", json={"agent_id": settings.bolna_agent_id, "recipient_phone_number": f"+{digits}",
-                                  "user_data": {"customer_phone": f"+{digits}"}})
+        r = c.post("/call", json={"agent_id": settings.bolna_agent_id, "recipient_phone_number": _e164(phone),
+                                  "user_data": user_data})
     if r.status_code >= 400:
         raise SystemExit(f"Call failed: HTTP {r.status_code} {r.text[:300]}")
     return r.json()

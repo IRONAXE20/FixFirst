@@ -9,12 +9,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import desc, select, update
 
+from . import photos as photo_store
+from . import playbook_store
 from . import rentbasket
 from .bolna import BolnaBridge, completion_body, sse_chunks, webhook_token
 from .brain import Brain
@@ -23,7 +25,7 @@ from .db import calls, customers, fetch_rentals, get_engine, outbox, row, ticket
 from .demo_llm import KeywordLLM
 from .knowledge import DocLibrary
 from .llm import ChatModel, make_brain_llm
-from .playbooks import get_library
+from .playbooks import PlaybookError, get_library
 from .safety import get_screen
 from .seed import seed_demo
 from .session import CallSession, SessionStore
@@ -50,12 +52,19 @@ class TicketPatch(BaseModel):
     status: str
 
 
+class PlaybookEdit(BaseModel):
+    yaml: str
+    by: str | None = None
+    base_version: int | None = None
+
+
 def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatModel | None] | None = None) -> FastAPI:
     settings = settings or get_settings()
     tenant = get_tenant()
     engine = get_engine(settings.database_url)
     seed_demo(engine)
     library = get_library()
+    playbook_store.sync(engine, library)   # the database copy wins; the YAML files seed what's missing
     screen = get_screen()
     docs = DocLibrary()
     ticket_service = TicketService(engine, WhatsApp(settings, engine), tenant, settings)
@@ -104,6 +113,8 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
 
     bolna = BolnaBridge(store=store, brain_for=brain_for, sync_customer=sync_customer, tenant=tenant)
 
+    last_purge = [-1e9]
+
     async def followup_loop():
         while True:
             try:
@@ -111,6 +122,9 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
                 if sent:
                     logger.info(f"Sent {sent} WhatsApp follow-up(s)")
                 await bolna.end_idle()
+                if asyncio.get_running_loop().time() - last_purge[0] > 3600:   # hourly
+                    last_purge[0] = asyncio.get_running_loop().time()
+                    photo_store.purge(engine, settings.photo_retention_days)
             except Exception as e:
                 logger.exception(f"Follow-up loop error: {e}")
             await asyncio.sleep(30)
@@ -131,8 +145,17 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
 
     app = FastAPI(title="FixFirst", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
-    UPLOADS.mkdir(parents=True, exist_ok=True)
-    app.mount("/media", StaticFiles(directory=UPLOADS), name="media")
+
+    @app.get("/media/{path:path}", include_in_schema=False)
+    async def media(path: str):
+        found = photo_store.load(engine, path)
+        if found:
+            content_type, data = found
+            return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=86400"})
+        legacy = (UPLOADS / path).resolve()   # photos saved on disk before they moved to the database
+        if UPLOADS.resolve() in legacy.parents and legacy.is_file():
+            return FileResponse(legacy)
+        raise HTTPException(404, "Photo not found (it may have been deleted after the ticket closed)")
 
     # ---- pages -----------------------------------------------------------------------
     @app.get("/", include_in_schema=False)
@@ -239,7 +262,8 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     @app.post("/api/sessions/{session_id}/photos")
     async def session_photo(session_id: str, file: UploadFile = File(...)):
         session = session_or_404(session_id)
-        rel = await _save_photo(file, f"call-{session.id}")
+        rel = await _save_photo(engine, file, call_id=session.id,
+                                ticket_code=session.ticket["code"] if session.ticket else None)
         ticket_service.attach_session_photo(session, rel)
         return {"path": rel, "url": f"/media/{rel}"}
 
@@ -421,7 +445,7 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
             t = row(c.execute(select(tickets).where(tickets.c.photo_token == token)).first())
         if not t:
             raise HTTPException(404, "This link is invalid or has expired")
-        rel = await _save_photo(file, t["code"])
+        rel = await _save_photo(engine, file, call_id=t["call_id"], ticket_code=t["code"])
         ticket_service.add_photo(token, rel)
         live = store.get(t["call_id"] or "")
         if live:
@@ -431,8 +455,44 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     # ---- knowledge -------------------------------------------------------------------------
     @app.get("/api/playbooks")
     async def list_playbooks():
+        ver = playbook_store.versions(engine)
         return [{"id": pb.id, "appliance": pb.appliance, "title": pb.title, "status": pb.status,
-                 "reviewed_by": pb.reviewed_by, "steps": len(pb.nodes)} for pb in library.playbooks.values()]
+                 "reviewed_by": pb.reviewed_by, "steps": len(pb.nodes), "version": ver.get(pb.id)}
+                for pb in library.playbooks.values()]
+
+    def check_admin(request: Request) -> None:
+        if not settings.admin_key:
+            raise HTTPException(503, "Editing is switched off: set ADMIN_KEY on the server")
+        if not hmac.compare_digest(request.headers.get("x-admin-key", ""), settings.admin_key):
+            raise HTTPException(401, "Wrong admin key")
+
+    @app.get("/api/playbooks/{playbook_id}/source")
+    async def playbook_source(playbook_id: str):
+        found = playbook_store.source(engine, playbook_id)
+        if not found:
+            raise HTTPException(404, "Unknown playbook")
+        text, version = found
+        return {"yaml": text, "version": version, "history": playbook_store.history(engine, playbook_id),
+                "editing": bool(settings.admin_key)}
+
+    @app.post("/api/playbooks/{playbook_id}/validate")
+    async def validate_playbook(playbook_id: str, body: PlaybookEdit):
+        import yaml as _yaml
+        try:
+            pb = playbook_store.check(library, _yaml.safe_load(body.yaml))
+        except (PlaybookError, _yaml.YAMLError) as e:
+            return {"ok": False, "errors": str(e).splitlines()}
+        return {"ok": True, "steps": len(pb.nodes)}
+
+    @app.put("/api/playbooks/{playbook_id}")
+    async def save_playbook(playbook_id: str, body: PlaybookEdit, request: Request):
+        check_admin(request)
+        try:
+            version = playbook_store.save(engine, library, body.yaml, playbook_id=playbook_id,
+                                          by=(body.by or "").strip()[:80] or None, base_version=body.base_version)
+        except PlaybookError as e:
+            return JSONResponse(status_code=422, content={"ok": False, "errors": str(e).splitlines()})
+        return {"ok": True, "version": version}
 
     @app.get("/api/playbooks/{playbook_id}")
     async def get_playbook(playbook_id: str):
@@ -475,15 +535,13 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     return app
 
 
-async def _save_photo(file: UploadFile, folder: str) -> str:
+async def _save_photo(engine, file: UploadFile, *, call_id: str | None, ticket_code: str | None) -> str:
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(400, "Please upload an image")
     data = await file.read()
     if len(data) > MAX_PHOTO_BYTES:
         raise HTTPException(413, "Image too large (max 10 MB)")
-    ext = Path(file.filename or "").suffix.lower() if Path(file.filename or "").suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".heic") else ".jpg"
-    target = UPLOADS / folder
-    target.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex[:10]}{ext}"
-    (target / name).write_bytes(data)
-    return f"{folder}/{name}"
+    ext = Path(file.filename or "").suffix.lower()
+    ext = ext if ext in photo_store.TYPES else ".jpg"
+    return photo_store.save(engine, data, ext=ext, content_type=file.content_type or "", call_id=call_id,
+                            ticket_code=ticket_code)

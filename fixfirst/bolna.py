@@ -48,6 +48,22 @@ def _text(content) -> str:
     return ""
 
 
+def _find_key(node, key: str):
+    if isinstance(node, dict):
+        if key in node:
+            return node[key]
+        for v in node.values():
+            found = _find_key(v, key)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for v in node:
+            found = _find_key(v, key)
+            if found:
+                return found
+    return None
+
+
 def webhook_phones(payload: dict) -> list[str]:
     """Phone numbers in an execution payload (telephony details and the user_data we passed), in order."""
     found: list[str] = []
@@ -63,6 +79,9 @@ def webhook_phones(payload: dict) -> list[str]:
             if mobile10(str(node)) and str(node) not in found:
                 found.append(str(node))
 
+    test = _find_key(payload, "test_customer_phone")
+    if test and mobile10(str(test)):
+        return [str(test)]   # `bolna-call --as`: look the caller up as this customer only
     walk({"context_details": payload.get("context_details"), "telephony_data": payload.get("telephony_data"),
           "user_data": payload.get("user_data")})
     return found
@@ -153,6 +172,7 @@ class BolnaBridge:
             return None, [], None
         eid = max(self.pending, key=lambda e: self.pending[e]["at"])
         entry = self.pending.pop(eid)
+        self._claimed_test = bool(entry.get("test"))
         return eid, entry["phones"], entry.get("lookup")
 
     async def _lookup(self, phones: list[str]) -> tuple[str | None, str | None]:
@@ -165,6 +185,7 @@ class BolnaBridge:
         return None, unique[0] if unique else None
 
     async def _open(self, key: str, cv: dict, convo: list[dict]) -> BolnaCall:
+        self._claimed_test = False
         execution_id, hook_phones, prefetched = ((cv.get("call_ref"), [], None) if cv.get("call_ref")
                                                  else self._claim_pending())
         phones = [p for p in (cv.get("customer_phone"), cv.get("from"), cv.get("to"), *hook_phones) if mobile10(p)]
@@ -173,6 +194,7 @@ class BolnaBridge:
         else:
             customer_id, caller = await self._lookup(phones)
         session = self.store.create(channel="phone" if phones else "web", customer_id=customer_id, caller_phone=caller)
+        session.test_call = self._claimed_test   # `bolna-call --as`: nothing is sent to the real customer
         brain = self.brain_for(session)
         welcome = _text(convo[0].get("content")) if convo and convo[0].get("role") == "assistant" else ""
         brain.adopt_greeting(welcome) if welcome else brain.greeting()
@@ -232,6 +254,7 @@ class BolnaBridge:
             if status not in FINAL_STATUSES:   # announced before its first turn: remember it for _open
                 entry = self.pending.setdefault(execution_id, {"at": time.monotonic(), "phones": []})
                 entry["phones"] = webhook_phones(payload) or entry["phones"]
+                entry["test"] = entry.get("test") or bool(_find_key(payload, "test_customer_phone"))
                 if entry["phones"] and "lookup" not in entry:
                     # The first turn comes ~40 s later; look the caller up now so it isn't waiting on this.
                     entry["lookup"] = asyncio.create_task(self._lookup(entry["phones"]))

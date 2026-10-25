@@ -30,6 +30,12 @@
     .doc-hit p { margin: 4px 0 0; font-size: 13.5px; color: var(--ink-2); white-space: pre-line; }
     .row { display: flex; gap: 8px; align-items: center; }
     .script { font-size: 14px; margin-top: 6px; }
+    .editor { width: 100%; min-height: 60vh; font-family: ui-monospace, Consolas, monospace; font-size: 13px; line-height: 1.5;
+              border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface); color: inherit; resize: vertical; tab-size: 2; }
+    .edit-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+    .edit-bar input { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; font: inherit; min-width: 0; }
+    .errs { margin: 8px 0 0; padding-left: 18px; color: var(--danger); font-size: 13px; }
+    .ok-msg { color: var(--ok, #1a7f37); font-size: 13px; }
   </style>
 </head>
 <body>
@@ -39,7 +45,7 @@
     <nav class="nav"><a href="/" data-page="call">Call</a><a href="/ops" data-page="ops">Ops</a><a href="/knowledge" data-page="knowledge">Knowledge</a></nav>
   </div></header>
   <main class="page stack">
-    <div class="banner info"><span>ℹ️</span><span><b>Every instruction the agent speaks is on this page.</b> The agent reads these steps word for word; the model only picks which answer the caller gave. All playbooks are drafts until RentBasket's senior technician reviews them (set <span class="mono">status: reviewed</span> in the YAML).</span></div>
+    <div class="banner info"><span>ℹ️</span><span><b>Every instruction the agent speaks is on this page.</b> The agent reads these steps word for word; the model only picks which answer the caller gave. Playbooks are stored in the database; edit one with ✏️ Edit (needs the admin key). Every save is checked before it goes live and kept as a version. All playbooks are drafts until RentBasket's senior technician reviews them (set <span class="mono">status: reviewed</span>).</span></div>
     <div class="grid">
       <aside class="card">
         <div class="card-head"><h2>Playbooks</h2></div>

@@ -2,15 +2,22 @@
 
 **Voice-first appliance first aid for rental and service companies, starting with RentBasket.**
 
-A customer calls when an appliance they rent stops working (AC, washing machine, fridge, TV, inverter, water purifier or gas stove), describes it in Hindi, English or Hinglish, and an AI agent walks them through safe checks one step at a time. If it can't be fixed by phone, FixFirst books a ticket, sends the customer a WhatsApp with a photo-upload link, and sends the service team a technician handoff (steps already ruled out, likely cause, parts to carry).
+A customer calls when an appliance they rent stops working (AC, washing machine, fridge, TV, inverter, water purifier or gas stove), describes it in Hindi, English or Hinglish, and an AI agent walks them through safe checks one step at a time. If it can't be fixed by phone, FixFirst books a ticket, sends the customer a WhatsApp with a photo-upload link, and sends the service team a technician handoff (steps already ruled out, likely cause, parts to carry). When the problem is closed, the agent asks "anything else?" and, if not, says goodbye and ends the call.
 
-Two ways to call:
-- **Phone, through Bolna.** Bolna runs the call (telephony, Sarvam saaras:v4 speech-to-text, bulbul:v3 voice) and calls FixFirst as its custom LLM. Callers are recognised by phone number from RentBasket's customer API.
-- **Browser** (WebRTC, Pipecat) for demos. This needs a Sarvam key; the same bot also listens on `/ws/exotel`.
+**Live setup (October 2026):**
 
-The brain runs on **Claude** (`claude-haiku-5-5` by default) or on `sarvam-105b-conversations`.
+| Part | Runs on |
+|---|---|
+| Phone calls | **Bolna** (telephony, Sarvam saaras:v4 speech-to-text, bulbul:v3 voice "priya"), calling FixFirst as its custom LLM |
+| The brain | **Claude** `claude-haiku-5-5` (or `sarvam-105b-conversations` with `LLM_PROVIDER=sarvam`) |
+| Server | **Render** web service `fixfirst`, auto-deploys from GitHub `main` |
+| Data | **Supabase** Postgres, in its own `fixfirst` schema: customers, calls, tickets, WhatsApp outbox, follow-ups, **photos** and **playbooks** |
+| Customers | Looked up by phone number in **RentBasket's customer API** |
+| WhatsApp | Meta Cloud API, **dry-run** until an access token is set |
 
-## Try it in 2 minutes
+A browser voice call (Pipecat, WebRTC) also works locally with a Sarvam key; it can't run on Render, which doesn't accept the UDP traffic WebRTC needs.
+
+## Run it locally
 
 ```bash
 python -m venv .venv
@@ -27,17 +34,16 @@ copy .env.example .env
 
 Open http://localhost:7860.
 
-- **With `ANTHROPIC_API_KEY` in `.env`:** **Type** mode runs the real agent. Look up a real RentBasket customer by mobile number, or pick a demo customer.
-- **With a Sarvam key (`sk_...`) too:** **Voice** works in the browser. Headphones avoid echo.
-- **With no key:** Type mode runs an offline keyword demo brain (simple phrases only; not the agent), so you can still click through playbooks, tickets and the ops view.
-- **Phone calls:** see "Phone calls through Bolna" below.
+- **With `ANTHROPIC_API_KEY`:** Type mode runs the real agent. Look up a real RentBasket customer by mobile number, or pick a demo customer.
+- **With a Sarvam key (`sk_...`) too:** Voice works in the browser (headphones avoid echo).
+- **With no key:** Type mode runs an offline keyword demo brain (simple phrases only), so you can still click through playbooks, tickets and the ops view.
 
 Pages:
-- `/` is the call page: live step card, optional transcript, photo upload, outcome.
-- `/ops` shows KPIs (fixed-on-call rate, tickets, safety alerts, voice-to-voice latency), ticket handoffs, call transcripts with per-turn latency, and the WhatsApp outbox.
-- `/knowledge` holds every playbook step in Hindi and English with its source, the safety scripts, and the document library (upload and search).
+- `/` call page: live step card, transcript, photo upload, outcome.
+- `/ops` KPIs, ticket handoffs (close a ticket here), call transcripts with per-turn latency, and the WhatsApp outbox.
+- `/knowledge` every playbook step in Hindi and English with its source, an **editor** for playbooks, the safety scripts, and the document library.
 
-Tests (no key needed) and the live scorecard (needs the key):
+Tests (no key needed) and the live scorecard (needs a model key):
 ```bash
 .venv\Scripts\python -m pytest -q
 ```
@@ -45,111 +51,116 @@ Tests (no key needed) and the live scorecard (needs the key):
 .venv\Scripts\python -m fixfirst eval
 ```
 
-## How it works
+## How a call works
 
 ```
-caller ──audio──▶ Pipecat (WebRTC in the browser, or Exotel websocket for phone)
-                    │  Silero VAD + barge-in
-                    ▼
-                  Sarvam saaras:v4 (speech-to-text, hi-IN)
-                    ▼
-            ┌── FixFirst brain (fixfirst/brain.py) ─────────────────────────┐
-            │ 1. Hazard screen: deterministic Hindi/Hinglish/English lexicon │
-            │    → per-hazard safety script, URGENT ticket, team alert       │
-            │ 2. sarvam-105b-conversations picks a tool:                     │
-            │    start_troubleshooting · answer_step · explain_step ·        │
-            │    record_error_code · escalate_to_technician ·                │
-            │    flag_safety_concern · mark_resolved · add_note              │
-            │ 3. Server runs the playbook: the next step's script is spoken  │
-            │    WORD FOR WORD; the LLM's own words pass a guard that blocks │
-            │    improvised repairs                                          │
-            └────────────────────────────────────────────────────────────────┘
-                    ▼
-                  Sarvam bulbul:v3 (text-to-speech, voice "priya")
-                    ▼
-                  caller hears the step
+caller ── phone ──▶ Bolna (telephony + Sarvam speech-to-text, turn-taking)
+                       │  POST /bolna/v1/chat/completions   (FixFirst as Bolna's "custom LLM")
+                       ▼
+        ┌── FixFirst (fixfirst/bolna.py → fixfirst/brain.py) ─────────────────┐
+        │ 0. Which call? Bolna's status webhooks bring the call id and phone   │
+        │    numbers ~40 s before the first words; the RentBasket lookup runs  │
+        │    then, so the agent knows the caller's rentals on turn one.        │
+        │ 1. Hazard screen: deterministic Hindi/Hinglish/English lexicon       │
+        │    → per-hazard safety script, URGENT ticket, team alert             │
+        │ 2. Claude picks a tool: start_troubleshooting · answer_step ·        │
+        │    explain_step · record_error_code · escalate_to_technician ·       │
+        │    flag_safety_concern · mark_resolved · add_note · say              │
+        │ 3. The server runs the playbook: the next step is spoken WORD FOR    │
+        │    WORD; the model's own words pass a guard that blocks improvised   │
+        │    repairs. Only tools offered on that turn may run.                 │
+        └──────────────────────────────────────────────────────────────────────┘
+                       ▼  streamed reply
+                     Bolna speaks it (Sarvam bulbul:v3)
 ```
 
-**Why it can only say what the documents support.** Every physical instruction lives in `knowledge/playbooks/*.yaml` as a decision tree. Each step has `say.en` / `say.hi`, the allowed `outcomes`, and the `sources` it was paraphrased from (official LG India, Samsung India, Daikin India and Racold pages, listed in `knowledge/sources.yaml`). The LLM never writes instructions. It only classifies the caller's answer into one of the current step's outcomes, and the server rejects anything else:
+After a problem is fixed, booked or set for a follow-up, the agent asks "क्या मैं आपकी और कोई मदद कर सकती हूँ?". A "no / thanks / bye" gets "…आपका दिन शुभ हो!", and Bolna's hang-up check (sent to our endpoint after each reply) is answered "yes" only then. The end-of-call webhook closes the call record and adds the recording link to the ticket.
 
-- an outcome that isn't listed
-- an answer to a step the caller hasn't heard yet
-- a jump that isn't declared
+**Why it can only say what the playbooks support.** Every physical instruction is a step in a playbook: a decision graph where each step has `say.en` / `say.hi`, the allowed `outcomes` (each leading to the next step, a safety hazard or an ending), and the `sources` it was paraphrased from (`knowledge/sources.yaml`). The model only classifies the caller's answer into one of the current step's outcomes; the server rejects an outcome that isn't listed, an answer to a step the caller hasn't heard, or a jump that isn't declared.
 
-The document library (`knowledge/docs` plus uploads) holds the source notes and any PDFs you add. It backs the citations. An optional doc-lookup tool for informational questions is off by default (`ENABLE_DOC_QA`).
+**Safety.** Two independent screens run every turn: the lexicon (negation-aware, tuned for speech-to-text Hinglish, quiet on everyday phrases like "current aa raha hai", "AC ki gas khatam" or a low stove flame), and the model's `flag_safety_concern` tool. A water alarm needs the caller to mention a plug, switch, board or wiring; "AC se paani aa raha hai" gets a "near a plug, or only dripping?" question instead. Any hazard ends troubleshooting, reads that hazard's own script (gas never mentions a switch: close the regulator, open windows, go outside, call 1906), books an URGENT ticket and alerts the team; after that the agent only repeats the hold line.
 
-**Safety.** Two independent screens run every turn:
-1. A lexicon tuned for speech-to-text Hinglish, with negation handling. "spark nahi hai" stays quiet; "pata nahi, jalne ki smell aa rahi" triggers. It is also built not to fire on everyday phrases like "current aa raha hai", "jhatke maar rahi hai" (machine shaking) or "AC ki gas khatam".
-2. The LLM's `flag_safety_concern` tool.
+## Playbooks (stored in Supabase)
 
-Either one ends troubleshooting, reads the script for that hazard, books an URGENT ticket and alerts the team. The gas script never asks the caller to touch a switch (it says: close the regulator, open the windows, go outside, call 1906). Electrical, fire, injury, battery and water-near-power each have their own script.
+- Stored in the `fixfirst.playbooks` table, one row per appliance, with every saved version in `fixfirst.playbook_history`.
+- **Edit on `/knowledge` → ✏️ Edit.** The editor shows the playbook as YAML. **Check** validates it; **Save** needs the admin key (`ADMIN_KEY`) and stores a new version that calls use straight away. Nothing is saved if a step is missing a language, an answer leads nowhere, a step can't be reached, or a source doesn't exist. If two people edit at once, the second save is refused until they reload.
+- `knowledge/playbooks/*.yaml` seed an empty table and add any playbook the table doesn't have yet. Once a playbook is in the table, **the table wins** over the file.
+- Copy between the two:
+  ```bash
+  .venv\Scripts\python -m fixfirst playbooks export
+  ```
+  writes the database copy to `knowledge/playbooks/` (to keep git in step), and
+  ```bash
+  .venv\Scripts\python -m fixfirst playbooks import
+  ```
+  stores every YAML file as a new version (overriding edits made on `/knowledge`).
+- All playbooks are `draft-unreviewed` until RentBasket's senior technician signs them off. The water purifier steps and the stove's burner-cap step cite third-party pages.
 
-**Fallbacks.**
-- An LLM error asks the caller to repeat; a second error books a callback ticket.
-- If speech-to-text or text-to-speech dies mid-call, a callback ticket is booked.
-- If the caller hangs up mid-playbook, they get a WhatsApp to resume.
-- If they talk over the agent, the step they missed is asked again.
+## Photos
+
+Customer photos (from the WhatsApp upload link or the call page) are stored in Supabase (`fixfirst.photos`), not on the server's disk, which Render wipes on every deploy. They're served at `/media/p/<id>`. A photo is **deleted 7 days after its ticket is closed** (`PHOTO_RETENTION_DAYS`; close tickets on `/ops`), and a photo never attached to a ticket after 30 days. The clean-up runs hourly.
+
+## Hosting on Render
+
+- Service `fixfirst` (Singapore), build `pip install -r requirements-render.txt` (no Pipecat), start `python -m fixfirst serve --host 0.0.0.0`. `render.yaml` describes the same service as a Blueprint, for moving it to RentBasket's Render workspace.
+- Every push to `main` deploys in about 3 minutes.
+- Secrets in Render's Environment tab: `ANTHROPIC_API_KEY`, `DATABASE_URL`, `FIXFIRST_LLM_KEY` (the same value as in your local `.env`, because `bolna-setup` registers it with Bolna), `ADMIN_KEY`, and later `WHATSAPP_TOKEN`.
+- On boot the server warms up (one database round trip and one tiny model request), so the first answer of a call takes about 1.8 s instead of 14 s.
+- **The Free plan sleeps after 15 idle minutes** and takes ~45 s to wake. Bolna's first webhook usually wakes it before the caller speaks, but use Starter (or RentBasket's Pro workspace) for a pilot.
 
 ## Phone calls through Bolna
 
-1. Put `ANTHROPIC_API_KEY` and `BOLNA_API_KEY` in `.env`, start the app, and expose it over https (for example `ngrok http 7860`).
-2. Run:
+1. Put `ANTHROPIC_API_KEY` and `BOLNA_API_KEY` in `.env`.
+2. Point Bolna at the server (run again after changing the URL or call settings):
    ```bash
-   .venv\Scripts\python -m fixfirst bolna-setup --public-url https://YOUR-TUNNEL
+   .venv\Scripts\python -m fixfirst bolna-setup --public-url https://fixfirst-zgo0.onrender.com
    ```
-   This registers `https://YOUR-TUNNEL/bolna/v1` as a Bolna custom LLM (protected by `FIXFIRST_LLM_KEY`), creates the agent (Sarvam saaras:v4 + bulbul:v3 "priya", Hindi welcome line, end-of-call webhook) and saves `BOLNA_AGENT_ID` to `.env`. Run it again after the tunnel URL changes.
+   This registers `<url>/bolna/v1` as a Bolna custom LLM (protected by `FIXFIRST_LLM_KEY`) and creates or updates the agent: Sarvam saaras:v4 + bulbul:v3 "priya", Hindi welcome line, 800 ms end-of-turn pause, hang-up check on, 90 s silence limit, and the end-of-call webhook (`/bolna/webhook/<token derived from the key>`). It saves `BOLNA_AGENT_ID` to `.env`.
 3. Test from the Bolna dashboard, or have the agent call you:
    ```bash
    .venv\Scripts\python -m fixfirst bolna-call 98XXXXXXXX
    ```
+   To test customer recognition from your own phone, add `--as <a RentBasket customer's number>`. The agent then looks you up as that customer, and the call is marked as a test, so no WhatsApp message or follow-up goes to the real customer.
 
-How it fits together: Bolna sends the whole conversation on every turn; FixFirst reads the call id and phone numbers from the agent's prompt variables (`call_ref={execution_id} from={from_number} to={to_number}`), looks the caller up in RentBasket's API on the first turn, feeds only the caller's new words to the brain, and streams back the reply. If Bolna's history shows the last reply was cut short, the step is asked again. The webhook closes the call (follow-ups, recording link on the ticket); calls with no webhook close after 20 idle minutes.
+Calls go through Bolna's own hosted numbers; no separate Plivo account is needed. For customers to dial in, buy an inbound number inside Bolna (Plivo or Vobiz) and attach the agent. The Bolna account allows 2 calls at once.
+
+## WhatsApp (not live yet)
+
+The phone number ID and business account ID are set. To go live you also need:
+1. A permanent **access token** (Meta Business Settings → System user, permission `whatsapp_business_messaging`) in `WHATSAPP_TOKEN`.
+2. Approved templates `fixfirst_customer_update` and `fixfirst_team_ticket` (one body variable `{{1}}` each). The customer template is currently categorised Marketing.
+3. The team's numbers in `knowledge/tenant.yaml` (`team_whatsapp`).
+4. `WHATSAPP_MODE=live`.
+
+Until then every message lands in the outbox on `/ops`.
 
 ## Project layout
 
 | Path | What it is |
 |---|---|
-| `fixfirst/brain.py` | The agent: hazard screen → LLM tool choice → scripted playbook steps, guard, fallbacks, latency |
-| `fixfirst/claude_llm.py` | Claude as the brain's model (Anthropic SDK; converts the brain's history to the Messages API) |
-| `fixfirst/bolna.py` | Bolna custom-LLM bridge: maps Bolna turns to brain sessions, SSE streaming, webhook |
+| `fixfirst/brain.py` | The agent: hazard screen → model tool choice → scripted playbook steps, guard, goodbye, fallbacks, latency |
+| `fixfirst/claude_llm.py` | Claude as the brain's model (Anthropic SDK) |
+| `fixfirst/bolna.py` | Bolna custom-LLM bridge: call matching from webhooks, streaming replies, hang-up check, end of call |
 | `fixfirst/bolna_admin.py` | `bolna-setup` / `bolna-call` commands |
-| `fixfirst/rentbasket.py` | Customer lookup from RentBasket's API by mobile number, copied into the local tables |
-| `fixfirst/playbooks.py` | Loads, validates and runs playbooks; the error-code lookup |
+| `fixfirst/rentbasket.py` | Customer lookup from RentBasket's API, copied into the local tables |
+| `fixfirst/playbooks.py` | Parses, validates and runs playbooks; the error-code lookup |
+| `fixfirst/playbook_store.py` | Playbooks in the database: seed, versioned save, import/export |
+| `fixfirst/photos.py` | Photos in the database and their retention |
 | `fixfirst/safety.py` | Hazard screen and the unsafe-instruction guard |
-| `fixfirst/voice.py` | Pipecat pipeline (Sarvam STT/TTS, Silero VAD), latency observer, voice-failure fallback |
-| `fixfirst/server.py` | FastAPI pages and APIs, WebRTC offer, `/ws/exotel`, uploads, follow-up sender |
-| `fixfirst/tickets.py` | Tickets, technician handoff text, WhatsApp messages, follow-ups, call records |
-| `fixfirst/whatsapp.py` | Meta Cloud API sender with a dry-run outbox (same pattern as Reviews Analyzer) |
-| `fixfirst/knowledge.py` | Document library (Markdown/PDF/TXT, BM25 search) |
-| `fixfirst/eval.py` | Plays `tests/scenarios.yaml` against the real agent and prints the scorecard |
-| `fixfirst/demo_llm.py` | Offline keyword brain for typed demos without a key |
-| `knowledge/tenant.yaml` | Company settings: name, agent voice, support numbers, on-call, callback promise |
-| `knowledge/playbooks/` | AC, washing machine (fully and semi-automatic), fridge, TV, inverter, water purifier, gas stove. The old geyser playbook is in `knowledge/archive/` (RentBasket doesn't rent geysers). |
-| `knowledge/safety/hazards.yaml` | Safety scripts and the hazard lexicon |
-| `knowledge/errorcodes/washer.yaml` | LG/Samsung washer codes from official pages only |
-| `council/` | The design council's report and transcript |
+| `fixfirst/server.py` | FastAPI pages and APIs, Bolna endpoints, warm-up, follow-up and clean-up loop |
+| `fixfirst/tickets.py` | Tickets, technician handoff, WhatsApp messages, follow-ups, call records |
+| `fixfirst/whatsapp.py` | Meta Cloud API sender with a dry-run outbox |
+| `fixfirst/voice.py` | Browser/Exotel voice through Pipecat (local only) |
+| `fixfirst/eval.py` | Plays `tests/scenarios.yaml` (36 scenarios) against the real agent and prints the scorecard |
+| `knowledge/` | Playbook seeds, sources, safety scripts, washer error codes, tenant settings, document library |
+| `render.yaml`, `requirements-render.txt` | Render deployment |
 
-## Going live, step by step
+## Status
 
-1. **Sarvam:** add `SARVAM_API_KEY`, then run `python -m fixfirst eval` (a simulated caller answers whatever the agent asks; `--scripted` replays fixed lines) and read `data/eval/report-*.json`. Keep `SARVAM_STT_MODE=codemix`: in "transcribe" mode English words come out in Devanagari and error codes get mangled. The eval is paced to about 50 requests a minute because the starter plan rate-limits. Make 10–20 real voice calls and watch voice-to-voice latency on `/ops`.
-2. **WhatsApp:** create two utility templates with one body variable `{{1}}`, named `fixfirst_customer_update` and `fixfirst_team_ticket`. Then set `WHATSAPP_MODE=live`, the token and phone-number ID, and `team_whatsapp` numbers in `knowledge/tenant.yaml`. Set `PUBLIC_BASE_URL` to a public https URL so photo links open on phones.
-3. **Phone (Exotel):** run behind https (for example `ngrok http 7860`). In Exotel App Bazaar, create Call Start → **Voicebot** applet with `wss://<host>/ws/exotel` → Hangup, and attach it to your ExoPhone. Callers are matched to customers by caller ID. The route follows Sarvam's Exotel + Pipecat guide but **has not been tested on a live number**.
-4. **Supabase:** set `DATABASE_URL` to the Session pooler connection string. Tables are created on start in a separate `fixfirst` schema, so they stay out of Supabase's public REST API. Connected to RentBasket's project on 2026-10-24.
-5. **Real customers and fleet:** replace `fixfirst/seed.py` with a sync from RentBasket's customer and rental records.
+- **Live calls through Bolna work end to end:** call matching from webhooks, Claude replies in 1–2.7 s per turn (first answer ~1.3 s), safety alerts, technician booking, the end-of-call webhook. Fixes from five test calls are in.
+- **Eval on Claude:** fixable 12/12, escalations 12/12, safety 12/12, 0 guard blocks (the simulated caller occasionally contradicts its own script, so run it more than once).
+- **245 automated tests** pass without any key.
+- **Not yet verified:** the goodbye and hang-up on a live call, recognising a real customer on a live call, live WhatsApp, inbound calls, photos and playbook editing on the live Supabase.
+- **Before a pilot:** Render Starter, WhatsApp token and templates, a restricted Supabase login instead of `postgres`, technician sign-off of every playbook, and a key on RentBasket's customer API.
 
-## Status of v1
-
-Verified with the Sarvam key (2026-10-19):
-- **Scorecard** (`python -m fixfirst eval`, simulated caller): fixable 10/10, escalations 10/10, safety 10/10, 0 guard blocks, median LLM time 0.25 s. The model's answers vary between runs, so run it more than once (see [docs/v1-review.md](docs/v1-review.md)).
-- **Voice end to end:** a recorded Hindi caller was played into a real browser-style WebRTC call. The greeting played, saaras:v4 (codemix) transcribed it, the playbook started, and the agent answered. Voice-to-voice was **1.08 s** and **0.56 s** on two runs.
-- 220 automated tests pass (no key needed): the safety screen including speech-to-text Devanagari transcripts, playbook validation, the brain with a scripted model, the Claude client, the RentBasket lookup, the Bolna bridge, the API and the fallbacks.
-- Since 2026-10-24 (v1.1): on Claude (`claude-haiku-5-5`) the 36-scenario eval scores fixable 12/12, escalations 12/12, safety 12/12, 0 guard blocks, median brain time 1.1 s. Phone calls through Bolna and RentBasket lookup are built and unit-tested; no real Bolna call has run yet. See docs/v1-review.md.
-- Typed calls, tickets, technician handoff, photo upload and the ops view work in the browser.
-
-**Not yet verified:**
-- Calls with real people (turn-taking, background noise, accents).
-- The Exotel phone route.
-- Live WhatsApp sending.
-- Whether the playbook content is correct for RentBasket's actual models. Every playbook is `draft-unreviewed` until a senior technician signs off.
-
-See [docs/v1-review.md](docs/v1-review.md) for the decisions, open questions and what to ask RentBasket.
+See [docs/v1-review.md](docs/v1-review.md) for the decisions, test history and what to ask RentBasket.
