@@ -100,6 +100,13 @@ class SafetyScreen:
             national=nums.get("national", "112"), fire=nums.get("fire", "101"), lpg=nums.get("lpg", "1906"),
             callback_minutes=tenant.urgent_callback_minutes, company=tenant.name)
 
+    def reminder(self, kind: str, language: str, tenant: Tenant) -> str:
+        """The short scripted reminder of what to do, for questions asked after the script was read."""
+        text = self.hazards[kind]["reminder"]["hi" if language == "hi" else "en"]
+        nums = tenant.emergency_numbers
+        return " ".join(text.split()).format(national=nums.get("national", "112"), fire=nums.get("fire", "101"),
+                                             lpg=nums.get("lpg", "1906"))
+
     def label(self, kind: str) -> str:
         return self.hazards[kind]["label"]
 

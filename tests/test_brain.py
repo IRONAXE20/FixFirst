@@ -525,7 +525,7 @@ def test_after_a_safety_alert_instructions_become_the_hold_line(env):
     run(brain.respond("AC se chingari nikal rahi hai"))
     assert session.hazard == "electrical"
     speech = run(brain.respond("hello meri awaaz aa rahi hai?")).speech
-    assert speech == brain._phrase("hazard_hold", minutes=env.tenant.urgent_callback_minutes)
+    assert speech == brain._hazard_hold() and "main switch" in speech
     assert "safety check" not in speech
 
 
@@ -591,4 +591,22 @@ def test_safety_call_ends_with_a_safe_goodbye(env):
     speech = run(brain.respond("theek hai"))
     assert speech.speech == brain._phrase("safety_goodbye", minutes=env.tenant.urgent_callback_minutes)
     assert session.end_requested
+
+
+@pytest.mark.parametrize("question", ["par AC to abhi on hai mera", "पर एसी तो अभी ऑन है मेरा", "ab kya karun?", "plug nikal doon?"])
+def test_action_questions_after_an_alert_get_the_hazard_reminder(env, question):
+    brain, session, llm = env.make([])
+    run(brain.respond("AC se jalne ki smell aa rahi hai"))
+    n = len(llm.requests)
+    speech = run(brain.respond(question)).speech
+    assert speech == brain._hazard_hold() and len(llm.requests) == n   # scripted, no model call
+    assert "main switch" in speech and "plug" in speech
+
+
+def test_gas_reminder_never_says_to_switch_anything_off():
+    from fixfirst.config import Tenant
+    from fixfirst.safety import get_screen
+    for lang in ("hi", "en"):
+        text = get_screen().reminder("gas", lang, Tenant.load()).lower()
+        assert "main switch" not in text and ("मत" in text or "don't" in text)
 

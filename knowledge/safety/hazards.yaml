@@ -8,6 +8,9 @@
 # with real customers. Scripts are written for a female voice agent (Hindi verb forms).
 #
 # Placeholders: {national} {fire} {lpg} {callback_minutes} {company}
+#
+# `reminder` is the short, scripted answer when the caller asks what to do after the script was read
+# ("par AC to abhi on hai", "kya karun?"). It only repeats actions already in that hazard's script.
 
 # When several hazards match one turn, the first kind in this list wins.
 priority: [fire, gas, injury, electrical, battery, water_electric]
@@ -15,6 +18,9 @@ priority: [fire, gas, injury, electrical, battery, water_electric]
 hazards:
   fire:
     label: Fire, flames or explosion
+    reminder:
+      en: "Please stay out of that room and keep everyone away. If you haven't yet, call {national}, or the fire brigade on {fire}."
+      hi: "कृपया उस कमरे से बाहर ही रहिए और सबको दूर रखिए। अगर अभी तक नहीं किया है, तो {national} पर, या fire brigade को {fire} पर call कीजिए।"
     script:
       en: >-
         Please leave the room right now and keep everyone away from it. Call {national}, or the fire
@@ -29,6 +35,9 @@ hazards:
 
   gas:
     label: Gas smell or LPG leak
+    reminder:
+      en: "Please don't switch anything on or off. If you can reach it safely, turn the cylinder's regulator off, keep the windows open and stay outside."
+      hi: "कृपया कोई भी switch ON या OFF मत कीजिए। अगर safely पहुँच सकते हैं तो cylinder का regulator बंद कीजिए, खिड़कियाँ खुली रखिए और बाहर ही रहिए।"
     # Never ask the caller to operate any switch, plug or appliance: a switch can spark.
     script:
       en: >-
@@ -46,6 +55,9 @@ hazards:
 
   injury:
     label: Someone hurt, shocked or unconscious
+    reminder:
+      en: "If the person may still be touching the appliance or a wire, please don't touch them, and call {national} for an ambulance if you haven't yet."
+      hi: "अगर वो इंसान अभी भी appliance या किसी तार को छू रहा हो सकता है, तो उन्हें मत छुइए, और अगर अभी तक नहीं किया है तो {national} पर ambulance के लिए call कीजिए।"
     script:
       en: >-
         If the person might still be touching the appliance or a wire, please don't touch them. Switch
@@ -58,6 +70,9 @@ hazards:
 
   electrical:
     label: Sparks, shock, burning smell or smoke
+    reminder:
+      en: "Please don't touch the appliance, its plug or its wires. If you can reach the main switch board without touching them, switch off the main switch."
+      hi: "कृपया appliance, उसके plug या तारों को हाथ मत लगाइए। अगर आप उन्हें छुए बिना main switch board तक पहुँच सकते हैं, तो main switch बंद कर दीजिए।"
     script:
       en: >-
         Please stop using the appliance and don't touch it, its plug or its wires. If you can reach the
@@ -74,6 +89,9 @@ hazards:
 
   battery:
     label: Inverter battery swelling, leaking, smell or heat
+    reminder:
+      en: "Please don't touch the battery and don't switch anything on or off near it. Keep a window open and children away."
+      hi: "कृपया battery को मत छुइए और उसके पास कोई भी switch ON या OFF मत कीजिए। खिड़की खुली रखिए और बच्चों को दूर रखिए।"
     # Battery gas is flammable: no switching, no flames, ventilate, keep away.
     script:
       en: >-
@@ -88,6 +106,9 @@ hazards:
 
   water_electric:
     label: Water near plugs, sockets, wires or a running appliance
+    reminder:
+      en: "Please don't touch the appliance, its plug or the water. If you can reach the main switch board without stepping in water, switch off the main switch."
+      hi: "कृपया appliance, उसके plug या पानी को मत छुइए। अगर आप पानी में पैर रखे बिना main switch board तक पहुँच सकते हैं, तो main switch बंद कर दीजिए।"
     script:
       en: >-
         Please don't touch the appliance, its plug or the water, and don't try to unplug it with wet hands.

@@ -85,6 +85,17 @@ _MORE = re.compile(r"\b(ac|fridge|frij|washing|machine|washer|tv|inverter|batter
                    r"और एक|एक और|भी|लीक|बंद है|नहीं चल|टेक्नीशियन|कब")
 
 
+_SAFETY_ACTION_Q = re.compile(
+    r"\b(on|off|chalu|chaalu|chal raha|chal rahi|band kar\w*|band karu\w*|band kar ?doon|kya kar\w*|kya karna|"
+    r"switch|plug|nikal\w*|regulator|khidki|bahar|chhu\w*|touch|use kar\w*|what should i do|turn (it )?off)\b|"
+    r"ऑन|ऑफ|चालू|चल रहा|चल रही|बंद कर|बंद करूँ|बंद करूं|क्या करूँ|क्या करूं|क्या करें|क्या करना|स्विच|प्लग|निकाल|"
+    r"रेगुलेटर|खिड़की|बाहर|छू")
+
+
+_ACTION_DONE = re.compile(r"(kar diya|kar di|kar diye|ho gaya|ho gayi|nikal diya|band hai|bahar aa gay\w*|done)|"
+                          r"कर दिया|कर दी|हो गया|हो गई|निकाल दिया|बंद है|बाहर आ गए|बाहर आ गई")
+
+
 def caller_is_done(text: str) -> bool:
     """After "anything else?": a short no / thanks / bye, with no new appliance or problem in it."""
     t = text.lower().strip()
@@ -288,8 +299,8 @@ PHRASES = {
         "en": "Is the water near a plug, switch, board or wires, or is it only dripping from the {appliance}?",
     },
     "hazard_hold": {
-        "hi": "जी, मैं सुन रही हूँ। आपकी safety सबसे ज़रूरी है: हमारी team {minutes} मिनट के अंदर आपको call करेगी। तब तक कृपया appliance से दूर रहिए।",
-        "en": "Yes, I'm here. Your safety comes first: our team will call you within {minutes} minutes. Until then, please stay away from the appliance.",
+        "hi": "जी। {reminder} हमारी team {minutes} मिनट के अंदर आपको call करेगी।",
+        "en": "Yes. {reminder} Our team will call you within {minutes} minutes.",
     },
     "take_your_time": {
         "hi": "ठीक है, आराम से कीजिए। हो जाए तो बताइए।",
@@ -310,6 +321,9 @@ SYSTEM_PROMPT = """You are {agent}, the voice assistant on {company}'s FixFirst 
 HOW TO SPEAK
 - This is a voice call: reply in one or two short sentences. No lists, markdown, emojis or symbols.
 - Reply in the caller's language. For Hindi or Hinglish, write Hindi in Devanagari script and keep English technical words (AC, filter, remote, MCB, error code, switch) in Latin script. For English, use simple Indian English.
+- Answer exactly what the caller just said, in one short sentence where you can. Don't repeat their words back, don't restate the whole situation, and don't talk about what you yourself can't do (you are a phone assistant; never say things like "I can't come to your home").
+- If the caller's message is only a fragment, cut off mid-sentence ("mera AC", "matlab woh"), reply only "जी, बताइए" (or "Yes, go on") so they can finish. Don't guess or start a new question.
+- Never invent dates, times, prices, names or what the technician will do. For the visit, use only the promise below and the ticket details in CALL STATE.
 - Pass `language` ("hi" or "en"), matching the caller's latest message, to every tool. Hindi or Hinglish written in Roman script ("AC thanda nahi kar raha") is Hindi: use "hi". Use "en" only when the caller speaks English.
 
 WHAT YOU MAY DO
@@ -405,6 +419,13 @@ class Brain:
             speech = await self._hazard(hazard.kind, source="screen", evidence=hazard.matched)
             self.s.messages.append({"role": "assistant", "content": speech})
             result = TurnResult(speech=speech, hazard=hazard.kind)
+        elif (self.s.hazard and not self.s.end_requested and _SAFETY_ACTION_Q.search(text.lower())
+              and not _ACTION_DONE.search(text.lower())):
+            # "par AC to abhi on hai", "kya karun?": answer with that hazard's scripted reminder, not the model.
+            speech = self._hazard_hold()
+            self.s.messages.append({"role": "assistant", "content": speech})
+            self.s.publish("safety_reminder", kind=self.s.hazard)
+            result = TurnResult(speech=speech, hazard=self.s.hazard)
         elif self.s.hazard and not self.s.end_requested and caller_is_done(text):
             # After the safety script, "theek hai / thank you" ends the call with a short safe goodbye.
             speech = self._phrase("safety_goodbye", minutes=self.tenant.urgent_callback_minutes)
@@ -1046,9 +1067,9 @@ class Brain:
             return self._phrase("guarded")
         off_script = physical_instruction(text)
         if self.s.hazard and (bad or off_script):
-            # The safety script has been read; any further instruction is the scripted hold line, never a step.
+            # The safety script has been read; any further instruction is that hazard's scripted reminder.
             self.s.publish("guard_hazard", text=text)
-            return self._phrase("hazard_hold", minutes=self.tenant.urgent_callback_minutes)
+            return self._hazard_hold()
         node = self.s.run.node if self.s.run and not self.s.run.finished and not self.s.closed else None
         if off_script and node and not node.terminal and node.id in self.s.presented:
             words = _vocab([off_script])
@@ -1068,6 +1089,10 @@ class Brain:
             cut = max(text.rfind(p, 0, 400) for p in (". ", "। ", "? ", "! "))
             text = text[: cut + 1] if cut > 0 else text[:400]
         return text
+
+    def _hazard_hold(self) -> str:
+        reminder = self.screen.reminder(self.s.hazard, self.s.language, self.tenant)
+        return self._phrase("hazard_hold", reminder=reminder, minutes=self.tenant.urgent_callback_minutes)
 
     def _phrase(self, key: str, **kw) -> str:
         template = PHRASES[key]["hi" if self.s.language == "hi" else "en"]
@@ -1100,7 +1125,8 @@ class Brain:
         if self.s.hazard:
             lines.append(f"SAFETY ALERT ({self.s.hazard}) is active: the safety instructions were read and an urgent "
                          f"callback is booked within {self.tenant.urgent_callback_minutes} minutes. Don't troubleshoot or "
-                         "give instructions; reassure the caller, confirm the team will call, and say goodbye.")
+                         "give instructions (questions about what to do with the appliance get a scripted reminder "
+                         "automatically). Reply briefly and calmly, confirm the team will call, and say goodbye.")
         if self.s.ticket:
             lines.append(f"Ticket {self.s.ticket['code']} ({self.s.ticket['priority']}) is booked. The call is wrapping up: "
                          "reassure, answer questions about next steps, and say goodbye. If the caller mentions another "
