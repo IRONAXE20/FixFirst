@@ -22,6 +22,19 @@ SYSTEM_PROMPT = (f"{MARKER} call_ref={{execution_id}} from={{from_number}} to={{
                  "carries the call details.")
 
 
+# Bolna's "hangup using a prompt" check runs on Bolna's own model after each reply. Its default rule hung up
+# right after "क्या मैं आपकी और कोई मदद कर सकती हूँ?" on a live call. Only FixFirst's scripted goodbyes
+# (brain.PHRASES goodbye / safety_goodbye) contain these phrases, and the model is told never to say them.
+HANGUP_PROMPT = (
+    "You decide whether to end this phone call now. End it ONLY if the assistant's most recent message is a "
+    "goodbye that contains one of these phrases: \"आपका दिन शुभ हो\", \"अलविदा\", \"Have a nice day\", "
+    "\"goodbye\". In every other case do NOT end the call. In particular, never end it when the assistant's "
+    "last message asks a question (for example \"क्या मैं आपकी और कोई मदद कर सकती हूँ?\" or \"Is there "
+    "anything else I can help you with?\"), gives an instruction, or says a technician is booked: the caller "
+    "must answer first."
+)
+
+
 def _client(settings: Settings) -> httpx.Client:
     if not settings.bolna_api_key:
         raise SystemExit("BOLNA_API_KEY is not set in .env")
@@ -82,6 +95,7 @@ def agent_payload(settings: Settings, tenant: Tenant, public_url: str, telephony
                     # Bolna asks our endpoint after each reply whether to hang up; bolna.py side_check answers
                     # "Yes" only after the caller declined "anything else?" and heard the goodbye.
                     "hangup_after_LLMCall": True,
+                    "call_cancellation_prompt": HANGUP_PROMPT,
                     "number_of_words_for_interruption": 2,
                     "backchanneling": False,
                     "ambient_noise": False,

@@ -247,8 +247,9 @@ PHRASES = {
         "en": "Is there anything else I can help you with?",
     },
     "safety_goodbye": {
-        "hi": "ठीक है, आप सुरक्षित रहिए। हमारी team {minutes} मिनट के अंदर आपको call करेगी। नमस्ते!",
-        "en": "Alright, please stay safe. Our team will call you within {minutes} minutes. Goodbye!",
+        # Ends with "अलविदा"/"goodbye": Bolna's hang-up prompt (bolna_admin.HANGUP_PROMPT) keys on these words.
+        "hi": "ठीक है, आप सुरक्षित रहिए। हमारी team {minutes} मिनट के अंदर आपको call करेगी। ध्यान रखिए, अलविदा!",
+        "en": "Alright, please stay safe. Our team will call you within {minutes} minutes. Take care, goodbye!",
     },
     "goodbye": {
         "hi": "ठीक है! {company} को call करने के लिए धन्यवाद। आपका दिन शुभ हो!",
@@ -323,6 +324,7 @@ HOW TO SPEAK
 - Reply in the caller's language. For Hindi or Hinglish, write Hindi in Devanagari script and keep English technical words (AC, filter, remote, MCB, error code, switch) in Latin script. For English, use simple Indian English.
 - Answer exactly what the caller just said, in one short sentence where you can. Don't repeat their words back, don't restate the whole situation, and don't talk about what you yourself can't do (you are a phone assistant; never say things like "I can't come to your home").
 - If the caller's message is only a fragment, cut off mid-sentence ("mera AC", "matlab woh"), reply only "जी, बताइए" (or "Yes, go on") so they can finish. Don't guess or start a new question.
+- Never say goodbye yourself ("आपका दिन शुभ हो", "अलविदा", "have a nice day", "goodbye"): the system says the goodbye, and the phone line hangs up when it hears one.
 - Never invent dates, times, prices, names or what the technician will do. For the visit, use only the promise below and the ticket details in CALL STATE.
 - Pass `language` ("hi" or "en"), matching the caller's latest message, to every tool. Hindi or Hinglish written in Roman script ("AC thanda nahi kar raha") is Hindi: use "hi". Use "en" only when the caller speaks English.
 

@@ -610,3 +610,13 @@ def test_gas_reminder_never_says_to_switch_anything_off():
         text = get_screen().reminder("gas", lang, Tenant.load()).lower()
         assert "main switch" not in text and ("मत" in text or "don't" in text)
 
+
+def test_only_the_scripted_goodbyes_contain_the_hang_up_phrases():
+    # Bolna hangs up when the agent's last line contains one of these; the greeting and questions must not.
+    from fixfirst.brain import PHRASES
+    marks = ("आपका दिन शुभ हो", "अलविदा", "have a nice day", "goodbye")
+    for key, texts in PHRASES.items():
+        for text in texts.values():
+            has = any(m in text.lower() for m in marks)
+            assert has == (key in ("goodbye", "safety_goodbye")), key
+
