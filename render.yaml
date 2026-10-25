@@ -25,7 +25,9 @@ services:
       - key: CUSTOMER_SOURCE
         value: rentbasket
       - key: WHATSAPP_MODE
-        value: dry_run
+        value: live
+      - key: WHATSAPP_TEMPLATE_LANG
+        value: en_IN
       - key: WHATSAPP_PHONE_NUMBER_ID
         value: "678441112018307"
       - key: WHATSAPP_BUSINESS_ACCOUNT_ID

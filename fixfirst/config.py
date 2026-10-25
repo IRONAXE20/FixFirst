@@ -41,7 +41,7 @@ class Settings:
     whatsapp_phone_number_id: str = ""
     whatsapp_template_customer: str = "fixfirst_customer_update"
     whatsapp_template_team: str = "fixfirst_team_ticket"
-    whatsapp_template_lang: str = "en"
+    whatsapp_template_lang: str = "en_IN"   # the templates are approved as English (India)
     whatsapp_business_account_id: str = ""
     public_base_url: str = "http://localhost:7860"
     port: int = 7860
@@ -79,7 +79,7 @@ class Settings:
             whatsapp_phone_number_id=_env("WHATSAPP_PHONE_NUMBER_ID"),
             whatsapp_template_customer=_env("WHATSAPP_TEMPLATE_CUSTOMER", cls.whatsapp_template_customer),
             whatsapp_template_team=_env("WHATSAPP_TEMPLATE_TEAM", cls.whatsapp_template_team),
-            whatsapp_template_lang=_env("WHATSAPP_TEMPLATE_LANG", "en"),
+            whatsapp_template_lang=_env("WHATSAPP_TEMPLATE_LANG", cls.whatsapp_template_lang),
             # On Render, RENDER_EXTERNAL_URL is the service's public https address.
             public_base_url=(_env("PUBLIC_BASE_URL") or _env("RENDER_EXTERNAL_URL") or cls.public_base_url).rstrip("/"),
             port=int(_env("PORT", "7860")),
