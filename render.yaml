@@ -29,7 +29,7 @@ services:
       - key: WHATSAPP_TEMPLATE_LANG
         value: en_IN
       - key: WHATSAPP_PHONE_NUMBER_ID
-        value: "678441112018307"
+        value: "629276350274662"
       - key: WHATSAPP_BUSINESS_ACCOUNT_ID
         value: "2070784403431954"
       - key: ANTHROPIC_API_KEY
