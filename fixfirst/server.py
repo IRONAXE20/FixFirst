@@ -18,7 +18,7 @@ from sqlalchemy import desc, select, update
 from . import photos as photo_store
 from . import playbook_store
 from . import rentbasket
-from .bolna import BolnaBridge, completion_body, sse_chunks, webhook_token
+from .bolna import BolnaBridge, completion_body, end_call_tool, sse_chunks, webhook_token
 from .brain import Brain
 from .config import DATA_DIR, WEB_DIR, Settings, get_settings, get_tenant, now_utc
 from .db import calls, customers, fetch_rentals, get_engine, outbox, row, tickets
@@ -345,6 +345,8 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
         check_llm_key(request)
         return {"object": "list", "data": [{"id": "fixfirst", "object": "model", "owned_by": "fixfirst"}]}
 
+    seen_tools: set[tuple] = set()
+
     @app.post("/bolna/v1/chat/completions")
     async def bolna_chat(request: Request):
         check_llm_key(request)
@@ -353,16 +355,25 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
         model = body.get("model") or "fixfirst"
         if not settings.brain_provider and llm_factory is None:   # the offline keyword brain isn't for real calls
             raise HTTPException(503, "Set ANTHROPIC_API_KEY (or SARVAM_API_KEY) for phone calls")
+        offered = sorted(((t or {}).get("function") or {}).get("name") or "?" for t in body.get("tools") or [])
+        if tuple(offered) not in seen_tools:   # which tools Bolna offers (its end-call tool, if any), once each
+            seen_tools.add(tuple(offered))
+            logger.info(f"Bolna offers tools: {offered or 'none'}")
         if not any(m.get("role") == "user" for m in messages):   # Bolna's own checks before the caller speaks
             speech = ""
         else:
             speech = await bolna.turn(messages)
+        # Once the caller is done and the goodbye is in this reply, end the call with Bolna's own tool when
+        # offered; otherwise Bolna's hang-up prompt (bolna_admin.HANGUP_PROMPT) has to notice the goodbye.
+        end_tool = end_call_tool(body) if speech and bolna.call_ends(messages) else None
+        if end_tool:
+            logger.info(f"Ending the call with Bolna's {end_tool} tool after the goodbye")
         if not body.get("stream"):
-            return completion_body(speech, model)
+            return completion_body(speech, model, end_tool)
 
         async def stream():
             # A reply Bolna drops (the caller kept talking) is noticed and undone on the next turn (bolna.py).
-            for piece in sse_chunks(speech, model):
+            for piece in sse_chunks(speech, model, end_tool):
                 yield piece
 
         return StreamingResponse(stream(), media_type="text/event-stream")

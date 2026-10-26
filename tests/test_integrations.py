@@ -345,3 +345,24 @@ def test_bolna_reply_the_caller_never_heard_is_undone_and_their_pieces_answered_
     assert phone.llm.requests[-1]["messages"][-1]["content"] == "नहीं यार। हाँ, सब कुछ नहीं है।"
     path = phone.get("/api/calls").json()[0]["path"]
     assert [p["node"] for p in path] == ["safety_check", "triage"]   # the safety question answered once
+
+
+def test_bolna_end_call_tool_is_called_after_the_goodbye(phone):
+    # Live calls 26 Oct: the goodbye was spoken but Bolna's hang-up check never fired, so the line stayed open.
+    phone.llm.responses.append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", caller_requested=True,
+                                                          language="hi")]))
+    tools = [{"type": "function", "function": {"name": "end_call", "parameters": {}}}]
+    first = "mera AC kharab hai, technician bhej do"
+    r = phone.post("/bolna/v1/chat/completions", json={**_body(first), "tools": tools}, headers=AUTH)
+    booked = _spoken(r)
+    assert '"end_call"' not in r.text   # "anything else?" is a question: the call stays up
+    r = phone.post("/bolna/v1/chat/completions", json={**_body(first, booked, "नहीं बस"), "tools": tools}, headers=AUTH)
+    assert "दिन शुभ हो" in _spoken(r)
+    chunks = [json.loads(line[6:]) for line in r.text.splitlines() if line.startswith("data: {")]
+    calls = [tc for c in chunks for tc in c["choices"][0]["delta"].get("tool_calls", [])]
+    assert [tc["function"]["name"] for tc in calls] == ["end_call"]
+    assert chunks[-1]["choices"][0]["finish_reason"] == "tool_calls"
+    # Without the tool on offer, the reply ends normally and Bolna's hang-up prompt has to notice the goodbye.
+    r = phone.post("/bolna/v1/chat/completions", json=_body(first, booked, "नहीं बस", "...", "ok bye", stream=False),
+                   headers=AUTH)
+    assert r.json()["choices"][0]["finish_reason"] == "stop"

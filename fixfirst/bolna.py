@@ -171,6 +171,14 @@ class BolnaBridge:
             call.last_speech = result.speech
             return result.speech
 
+    def call_ends(self, messages: list[dict]) -> bool:
+        """After this reply, should the call end? Yes once the caller is done and the goodbye was said."""
+        system = next((_text(m.get("content")) for m in messages if m.get("role") == "system"), "")
+        convo = [m for m in messages if m.get("role") in ("user", "assistant")]
+        call = self.calls.get(call_vars(system).get("call_ref") or self._fallback_key(convo))
+        session = self.store.get(call.session_id) if call else None
+        return bool(session and session.end_requested)
+
     def side_check(self, system: str, messages: list[dict]) -> str:
         """Bolna's hangup-using-a-prompt check (hangup_after_LLMCall) asks after each reply whether to end the
         call. We answer from the call's own state: yes only after the caller declined "anything else?" and
@@ -314,7 +322,7 @@ class BolnaBridge:
         return ended
 
 
-def sse_chunks(speech: str, model: str):
+def sse_chunks(speech: str, model: str, end_tool: str | None = None):
     """OpenAI streaming chunks for a finished reply, split by sentence so text-to-speech can start early."""
     cid, created = f"chatcmpl-{uuid.uuid4().hex[:16]}", int(time.time())
 
@@ -327,12 +335,35 @@ def sse_chunks(speech: str, model: str):
     for part in re.split(r"(?<=[.!?।])\s+", speech.strip()):
         if part:
             yield chunk({"content": part + " "})
-    yield chunk({}, "stop")
+    if end_tool:
+        # After the goodbye text: Bolna's own end-call tool, which hangs up once the goodbye has played.
+        yield chunk({"tool_calls": [_end_call(end_tool, index=0)]})
+        yield chunk({}, "tool_calls")
+    else:
+        yield chunk({}, "stop")
     yield "data: [DONE]\n\n"
 
 
-def completion_body(speech: str, model: str) -> dict:
+def end_call_tool(body: dict) -> str | None:
+    """The name of the end-call tool Bolna offered in this request ("end_call..."), if any."""
+    for t in body.get("tools") or []:
+        name = ((t or {}).get("function") or {}).get("name") or ""
+        if name.startswith("end_call"):
+            return name
+    return None
+
+
+def _end_call(name: str, index: int | None = None) -> dict:
+    tc = {"id": f"call_{uuid.uuid4().hex[:12]}", "type": "function",
+          "function": {"name": name, "arguments": json.dumps({"reason": "The caller is done and heard the goodbye"})}}
+    return {"index": index, **tc} if index is not None else tc
+
+
+def completion_body(speech: str, model: str, end_tool: str | None = None) -> dict:
+    message = {"role": "assistant", "content": speech}
+    if end_tool:
+        message["tool_calls"] = [_end_call(end_tool)]
     return {"id": f"chatcmpl-{uuid.uuid4().hex[:16]}", "object": "chat.completion", "created": int(time.time()),
-            "model": model, "choices": [{"index": 0, "message": {"role": "assistant", "content": speech},
-                                         "finish_reason": "stop"}],
+            "model": model, "choices": [{"index": 0, "message": message,
+                                         "finish_reason": "tool_calls" if end_tool else "stop"}],
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}

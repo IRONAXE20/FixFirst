@@ -23,15 +23,22 @@ SYSTEM_PROMPT = (f"{MARKER} call_ref={{execution_id}} from={{from_number}} to={{
 
 
 # Bolna's "hangup using a prompt" check runs on Bolna's own model after each reply. Its default rule hung up
-# right after "क्या मैं आपकी और कोई मदद कर सकती हूँ?" on a live call. Only FixFirst's scripted goodbyes
-# (brain.PHRASES goodbye / safety_goodbye) contain these phrases, and the model is told never to say them.
+# right after "क्या मैं आपकी और कोई मदद कर सकती हूँ?" on a live call; a rule keyed only on the assistant's
+# goodbye never fired (26 Oct), apparently because Bolna's check reads mainly the caller's lines. So it may
+# end the call on either sign. Only FixFirst's scripted goodbyes (brain.PHRASES goodbye / safety_goodbye /
+# goodbye_again) contain the goodbye phrases, and the model is told never to say them. When Bolna offers its
+# end_call tool, FixFirst calls it itself after the goodbye (server.py), which doesn't depend on this check.
 HANGUP_PROMPT = (
-    "You decide whether to end this phone call now. End it ONLY if the assistant's most recent message is a "
-    "goodbye that contains one of these phrases: \"आपका दिन शुभ हो\", \"अलविदा\", \"Have a nice day\", "
-    "\"goodbye\". In every other case do NOT end the call. In particular, never end it when the assistant's "
-    "last message asks a question (for example \"क्या मैं आपकी और कोई मदद कर सकती हूँ?\" or \"Is there "
-    "anything else I can help you with?\"), gives an instruction, or says a technician is booked: the caller "
-    "must answer first."
+    "You decide whether to end this phone call now. Answer Yes if EITHER is true:\n"
+    "1. The assistant's most recent message is a goodbye containing \"आपका दिन शुभ हो\", \"अलविदा\", "
+    "\"Have a nice day\" or \"goodbye\".\n"
+    "2. The user's last line is a clear sign-off that ends the conversation: thanks plus goodbye, or declining "
+    "more help, such as \"नहीं बस\", \"नहीं, धन्यवाद\", \"बस इतना ही\", \"ओके, थैंक यू, बाय\", \"bye\", "
+    "\"no that's all, thanks\".\n"
+    "Otherwise answer No. A plain \"नहीं\" / \"no\" that answers a question about the appliance (for example "
+    "\"नहीं, ऐसा कुछ नहीं है\" to a safety question, or \"नहीं हुआ\" to whether something worked) is NOT a "
+    "sign-off. Never end the call while the user is describing a problem, asking something, or in the middle "
+    "of a troubleshooting step. If unsure, answer No."
 )
 
 
