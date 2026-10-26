@@ -14,21 +14,22 @@ DEMO_CUSTOMERS = [
      "area": "DLF Phase 3, Gurgaon", "address": "U-Block, DLF Phase 3, Gurgaon"},
 ]
 
+# Brands follow RentBasket's fleet in its troubleshooting SOP (Lloyd/Voltas AC, Whirlpool/Lloyd fridge,
+# Whirlpool washer, Haier/Panasonic/Midea microwave).
 DEMO_RENTALS = [
     ("R11", "C1", "ac", "Split AC 1.5 ton (bedroom)", "Voltas", None),
-    ("R12", "C1", "washer", "Fully automatic top-load washing machine 6.5 kg", "LG", None),
+    ("R12", "C1", "washer", "Fully automatic top-load washing machine 6.5 kg", "Whirlpool", None),
     ("R13", "C1", "fridge", "Single door fridge 190 L", "Whirlpool", None),
-    ("R14", "C1", "washer_semi", "Semi automatic washing machine 7 kg (balcony)", "Whirlpool", None),
-    ("R21", "C2", "ac", "Window AC 1.5 ton", "LG", None),
-    ("R22", "C2", "washer", "Fully automatic top-load washing machine 7 kg", "Samsung", None),
-    ("R23", "C2", "fridge", "Double door fridge 253 L", "Samsung", None),
+    ("R21", "C2", "ac", "Window AC 1.5 ton", "Lloyd", None),
+    ("R22", "C2", "washer", "Fully automatic front-load washing machine 7 kg", "Whirlpool", None),
+    ("R23", "C2", "fridge", "Double door frost-free fridge 253 L", "Lloyd", None),
     ("R24", "C2", "inverter", "Inverter with single battery", "Luminous", None),
     ("R25", "C2", "stove", "Gas stove, 3 burner", None, None),
     ("R26", "C2", "water_purifier", "RO water purifier (kitchen)", "Aquaguard", None),
-    ("R31", "C3", "ac", "Split AC 1.5 ton (living room)", "Daikin", None),
+    ("R31", "C3", "ac", "Split AC 1.5 ton (living room)", "Lloyd", None),
     ("R32", "C3", "washer", "Fully automatic top-load washing machine 7 kg", "Whirlpool", None),
     ("R33", "C3", "tv", "Smart LED TV 43 inch", "Samsung", None),
-    ("R34", "C3", "microwave", "Solo microwave 20 L", "IFB", None),
+    ("R34", "C3", "microwave", "Solo microwave 20 L", "Panasonic", None),
 ]
 
 

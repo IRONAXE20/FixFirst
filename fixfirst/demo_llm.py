@@ -25,9 +25,10 @@ SYMPTOMS = [
     ("water_leak", r"\b(leak\w*|tapak\w*|drip\w*|dripping)\b"),
     ("not_draining", r"\b(drain\w*|paani nahi nikal|not emptying)\b"),
     ("not_filling", r"\b(not filling|paani nahi aa|no water|fill)\b"),
-    ("unbalanced", r"\b(spin|shak\w*|hil rahi|vibrat\w*)\b"),
+    ("shaking", r"\b(shak\w*|hil rahi|vibrat\w*|walking)\b"),
+    ("not_spinning", r"\b(spin|ghoom\w*|not rotat\w*)\b"),
+    ("no_heat", r"\b(not heating|garam nahi|no heat|doesn'?t heat)\b"),
     ("not_cooling", r"\b(not cool\w*|cooling|thand\w*|warm|garam|cold)\b"),
-    ("no_hot_water", r"\b(not heating|no hot|thanda paani|cold water)\b"),
     ("not_starting", r"\b(not (turning|switching) on|won'?t (start|turn on)|on nahi|start nahi|chalu nahi|dead|band pada|not starting|no power)\b"),
 ]
 TECHNICIAN = r"\b(technician|mechanic|send (someone|a person)|aadmi bhej\w*|koi bhej\w*|person|human|nahi hoga|can'?t do)\b"

@@ -16,15 +16,15 @@ _cache: dict[str, tuple[float, dict | None]] = {}
 
 # Product names look like 'Window AC - 2009' or 'Fully Automatic Washing M/c - 2025'; order matters.
 _APPLIANCE_RULES = [
-    ("washer_semi", r"semi[\s-]*auto"),
-    ("washer", r"washing|washer"),
+    ("washer", r"washing|washer|semi[\s-]*auto"),   # RentBasket's SOP covers top, front and semi-automatic together
     ("ac", r"\bac\b|air\s*condition"),
     ("fridge", r"fridge|refrigerator"),
     ("tv", r"\b(led|tv|television)\b"),
     ("inverter", r"inverter|battery"),
     ("water_purifier", r"purifier|\bro\b"),
     ("stove", r"stove|burner|\bhob\b"),
-    ("microwave", r"microwave|\botg\b"),
+    ("otg", r"\botg\b"),                            # an oven-toaster-grill isn't covered by the microwave SOP
+    ("microwave", r"microwave"),
     ("induction", r"induction"),
     ("geyser", r"geyser|water heater"),
 ]

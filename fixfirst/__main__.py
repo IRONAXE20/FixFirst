@@ -8,6 +8,7 @@
 """
 import argparse
 import asyncio
+import re
 import sys
 
 
@@ -64,7 +65,7 @@ def main() -> None:
             print(f"WARNING: not yet reviewed by a technician: {', '.join(unreviewed)}")
         print(f"Brain: {s.brain_provider or 'MISSING (offline demo only)'} · Sarvam voice key: "
               f"{'set' if s.sarvam_ready else 'missing'} · Bolna: {'set' if s.bolna_api_key else 'missing'} · "
-              f"WhatsApp: {s.whatsapp_mode} · DB: {s.database_url}")
+              f"WhatsApp: {s.whatsapp_mode} · DB: {re.sub(r'//([^:/@]+):[^@]*@', r'//\1:***@', s.database_url)}")
     elif args.cmd == "bolna-setup":
         from .bolna_admin import setup
         from .config import get_settings, get_tenant

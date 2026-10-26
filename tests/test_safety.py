@@ -10,8 +10,7 @@ SCENARIOS = yaml.safe_load((Path(__file__).parent / "scenarios.yaml").read_text(
 SAFETY = [s for s in SCENARIOS if s["category"] == "safety"]
 OTHER = [s for s in SCENARIOS if s["category"] != "safety"]
 APPLIANCE_OF = {"ac_not_cooling": "ac", "washer_problem": "washer", "fridge_not_cooling": "fridge",
-                "washer_semi_problem": "washer_semi", "inverter_problem": "inverter", "tv_problem": "tv",
-                "water_purifier_problem": "water_purifier", "stove_problem": "stove"}
+                "microwave_problem": "microwave"}
 
 
 def test_scenario_file_has_balanced_cases():

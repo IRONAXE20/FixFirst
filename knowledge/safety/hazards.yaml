@@ -13,7 +13,7 @@
 # ("par AC to abhi on hai", "kya karun?"). It only repeats actions already in that hazard's script.
 
 # When several hazards match one turn, the first kind in this list wins.
-priority: [fire, gas, injury, electrical, battery, water_electric]
+priority: [fire, gas, injury, electrical, battery, water_electric, stop_use]
 
 hazards:
   fire:
@@ -118,6 +118,25 @@ hazards:
         कृपया appliance, उसके plug या पानी को मत छुइए, और गीले हाथों से plug निकालने की कोशिश मत कीजिए।
         अगर आप पानी में पैर रखे बिना main switch board तक पहुँच सकते हैं, तो main switch बंद कर दीजिए।
         मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+
+  # RentBasket SOP 3.1 / 8.4: stop-use faults reached only through playbook answers (no lexicon):
+  # damaged microwave door, washer moving violently or flooding, chemical (refrigerant) smell,
+  # damaged plug or cable, an unusually hot cabinet with a smell.
+  stop_use:
+    label: Stop-use fault (damaged door, cable or plug, violent movement, chemical smell)
+    reminder:
+      en: "Please don't use the appliance, don't open it, and don't touch any wet or damaged electrical part. If it's safe to reach, keep it switched off at the wall switch."
+      hi: "कृपया appliance मत चलाइए, उसे मत खोलिए, और किसी गीले या खराब बिजली वाले हिस्से को मत छुइए। अगर wall switch तक safely पहुँच सकते हैं, तो उसे बंद ही रखिए।"
+    script:
+      en: >-
+        For safety, please stop using the appliance now. Don't open it, and don't touch any wet or damaged
+        electrical part. If it's safe to reach, switch it off at the wall switch; if it isn't safe, just
+        move away from it. I'm marking this urgent, and our team will call you within {callback_minutes} minutes.
+      hi: >-
+        Safety के लिए, कृपया अभी appliance का इस्तेमाल बंद कर दीजिए। उसे मत खोलिए, और किसी गीले या खराब
+        बिजली वाले हिस्से को मत छुइए। अगर wall switch तक safely पहुँच सकते हैं तो उसे बंद कर दीजिए; अगर safe
+        नहीं है, तो बस उससे दूर हो जाइए। मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट
+        के अंदर आपको call करेगी।
 
 # ---------------------------------------------------------------------------------------
 # Lexicon. Text is lower-cased and punctuation becomes clause breaks before matching.

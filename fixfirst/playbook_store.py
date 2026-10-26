@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 from loguru import logger
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.engine import Engine
 
 from .config import KNOWLEDGE_DIR, now_utc
@@ -118,9 +118,18 @@ def save(engine: Engine, library: PlaybookLibrary, text: str, *, playbook_id: st
 
 
 def import_files(engine: Engine, library: PlaybookLibrary, by: str = "import from knowledge/playbooks") -> list[str]:
-    """Store every YAML file as a new version (overrides edits made on /knowledge)."""
+    """Store every YAML file as a new version (overrides edits made on /knowledge), and retire stored
+    playbooks that no longer have a file (their versions stay in the history)."""
+    files = file_docs()
+    with engine.begin() as c:
+        gone = [r.id for r in c.execute(select(playbook_docs.c.id)) if r.id not in files]
+        if gone:
+            c.execute(delete(playbook_docs).where(playbook_docs.c.id.in_(gone)))
+    for pid in gone:
+        library.playbooks.pop(pid, None)
+        logger.info(f"Playbook {pid} retired from the database (no YAML file any more)")
     saved = []
-    for pid, raw in file_docs().items():
+    for pid, raw in files.items():
         save(engine, library, yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), playbook_id=pid, by=by)
         saved.append(pid)
     return saved

@@ -52,12 +52,12 @@ def test_full_phone_fix_flow(env):
         LLMResult(content="बढ़िया!", tool_calls=[call("answer_step", outcome="fixed", language="hi")]),
     ])
     assert run(brain.respond("AC on hi nahi ho raha")).speech == ac_text("safety_check")
-    assert run(brain.respond("nahi, aisa kuch nahi")).speech == ac_text("remote_display")
-    assert run(brain.respond("remote ki screen blank hai")).speech == ac_text("batteries")
+    assert run(brain.respond("nahi, aisa kuch nahi")).speech == ac_text("ac07_remote")
+    assert run(brain.respond("remote ki screen blank hai")).speech == ac_text("ac07_batteries")
     final = run(brain.respond("haan chal gaya")).speech
     assert final.startswith("बढ़िया!") and ac_text("resolved") in final and "WhatsApp" in final
     assert session.outcome == "resolved" and session.ticket is None
-    assert [p["node"] for p in session.run.path] == ["safety_check", "triage", "remote_display", "batteries"]
+    assert [p["node"] for p in session.run.path] == ["safety_check", "triage", "ac07_remote", "ac07_batteries"]
     assert rows(env.engine, followups)[0]["kind"] == "still_working"
     assert len(session.latency) == 4
 
@@ -98,18 +98,20 @@ def test_repeated_llm_failure_falls_back_to_a_ticket(env):
     assert "technical" in second.speech
 
 
-def test_lg_ie_code_routes_after_the_safety_question(env):
+def test_washer_code_is_recorded_after_the_safety_question_and_never_interpreted(env):
+    # RentBasket SOP WM-11: record the code exactly; don't guess its meaning from another model.
     washer = get_library().for_appliance("washer")
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="washer", rental_id="R12", symptom="error_code", language="hi")]),
-        LLMResult(tool_calls=[call("record_error_code", brand="LG", code="IE", language="hi")]),
+        LLMResult(tool_calls=[call("record_error_code", brand="Whirlpool", code="F05", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
     ])
-    assert run(brain.respond("machine pe IE aa raha hai")).speech == washer.node("safety_check").text("hi")
-    noted = run(brain.respond("LG ki hai")).speech
-    assert "I E" in noted and noted.endswith(washer.node("safety_check").text("hi"))
-    assert run(brain.respond("nahi, paani nahi hai plug ke paas")).speech == washer.node("nf_tap").text("hi")
-    assert session.error_code["meaning"].startswith("Water not filling")
+    assert run(brain.respond("machine pe F05 aa raha hai")).speech == washer.node("safety_check").text("hi")
+    noted = run(brain.respond("Whirlpool ki hai")).speech
+    assert "F 0 5" in noted and noted.endswith(washer.node("safety_check").text("hi"))
+    run(brain.respond("nahi, paani nahi hai plug ke paas"))
+    assert session.outcome == "escalated" and session.error_code["meaning"] is None
+    assert session.ticket["summary"]["likely_cause"].startswith("WM-11 WM_ERROR_CODE")
 
 
 def test_unknown_code_is_recorded_not_interpreted(env):
@@ -140,11 +142,42 @@ def test_escalation_sends_photo_link_and_spoken_ticket_number(env):
 
 
 def test_appliance_without_playbook_books_technician(env):
+    # RentBasket's SOP covers AC, fridge, washing machine and microwave only.
     brain, session, _ = env.make([
-        LLMResult(tool_calls=[call("start_troubleshooting", appliance="microwave", rental_id="R34", symptom="unknown", language="en")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="inverter", rental_id="R24", symptom="unknown", language="en")]),
+    ], customer="C2", language="en")
+    result = run(brain.respond("my inverter backup is very low"))
+    assert "inverter" in result.speech and session.outcome == "escalated"
+
+
+def test_microwave_water_test_follows_the_sop(env):
+    mw = get_library().for_appliance("microwave")
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="microwave", rental_id="R34", symptom="no_heat", language="en")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="en")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="closes", language="en")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="microwave_mode", language="en")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="not_warm", language="en")]),
     ], customer="C3", language="en")
-    result = run(brain.respond("my microwave is not heating"))
-    assert "microwave" in result.speech and session.outcome == "escalated"
+    run(brain.respond("my microwave runs but the food doesn't heat"))
+    assert run(brain.respond("no, nothing like that")).speech == mw.node("mw02_door").text("en")
+    run(brain.respond("yes it clicks shut"))
+    test = run(brain.respond("it's on microwave mode")).speech
+    assert "Never run it empty" in test
+    final = run(brain.respond("the water is still cold")).speech
+    assert final.startswith(mw.node("esc_mw02").text("en"))
+    assert session.ticket["summary"]["likely_cause"].startswith("MW-02 MW_RUNS_NO_HEAT")
+
+
+def test_damaged_microwave_door_is_a_stop_use_hazard(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="microwave", rental_id="R34", symptom="door", language="en")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="hazard_door", language="en")]),
+    ], customer="C3", language="en")
+    run(brain.respond("the microwave door won't close"))
+    speech = run(brain.respond("yes the hinge is broken")).speech
+    assert session.hazard == "stop_use" and session.ticket["priority"] == "urgent"
+    assert "stop using the appliance" in speech
 
 
 def test_long_preamble_is_dropped_in_front_of_a_script(env):
@@ -211,7 +244,7 @@ def test_no_hazard_is_not_assumed_from_unrelated_answers(env):
     again = run(brain.respond("remote ki screen theek hai, par AC kuch respond nahi kar raha bilkul bhi"))
     assert session.run.current == "safety_check" and again.speech.startswith("बस safety")
     run(brain.respond("nahi, aisa kuch nahi hai"))
-    assert session.run.current == "remote_display"
+    assert session.run.current == "ac07_remote"
 
 
 def test_say_tool_speaks_the_models_own_words(env):
@@ -224,14 +257,15 @@ def test_say_tool_speaks_the_models_own_words(env):
 def test_code_heard_before_the_playbook_is_routed_after_safety(env):
     washer = get_library().for_appliance("washer")
     brain, session, _ = env.make([
-        LLMResult(tool_calls=[call("record_error_code", code="IE", language="hi")]),
+        LLMResult(tool_calls=[call("record_error_code", code="F05", language="hi")]),
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="washer", rental_id="R12", symptom="unknown", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
     ])
-    assert "I E" in run(brain.respond("IE likha aa raha hai")).speech
+    assert "F 0 5" in run(brain.respond("F05 likha aa raha hai")).speech
     assert run(brain.respond("washing machine pe")).speech == washer.node("safety_check").text("hi")
-    assert run(brain.respond("nahi, kuch nahi")).speech == washer.node("nf_tap").text("hi")
-    assert session.error_code["brand"] == "LG" and session.error_code["meaning"]
+    run(brain.respond("nahi, kuch nahi"))
+    assert session.outcome == "escalated" and session.run.current == "esc_error_code"
+    assert session.error_code["brand"] == "Whirlpool" and session.error_code["meaning"] is None
 
 
 def test_off_script_say_is_replaced_by_the_current_step(env):
@@ -252,7 +286,7 @@ def test_clear_denial_is_accepted_without_a_loop(env):
     ])
     run(brain.respond("AC on hi nahi ho raha"))
     run(brain.respond("Nahi, kuch bhi nahi hai, bilkul normal hai."))
-    assert session.run.current == "remote_display"
+    assert session.run.current == "ac07_remote"
 
 
 def test_llm_hazard_flag_without_danger_words_asks_first(env):
@@ -287,21 +321,20 @@ def test_roman_hinglish_gets_hindi_scripts_even_if_the_model_says_en(env):
 
 
 # ---- answering steps the caller already covered ----------------------------------------
-def _ac_to_mcb(first_words):
-    """An AC call walked to the MCB step, with `first_words` said up front."""
+def _ac_to_wall_switch(first_words):
+    """An AC call walked to the wall-switch step (AC-07), with `first_words` said up front."""
     return first_words, [
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="remote_ok", language="hi")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="already_on", language="hi")]),
-    ], ["nahi, aisa kuch nahi", "remote ki screen theek hai, par AC respond nahi kar raha", "wall switch on hai"]
+    ], ["nahi, aisa kuch nahi", "remote ki screen theek hai, par AC respond nahi kar raha"]
 
 
 def test_step_the_caller_already_answered_is_skipped_with_their_words(env):
-    first, script, replies = _ac_to_mcb("AC start nahi ho raha. Abhi power cut hai, ghar inverter pe chal raha hai.")
+    first, script, replies = _ac_to_wall_switch("AC start nahi ho raha. Abhi power cut hai, ghar inverter pe chal raha hai.")
     brain, session, llm = env.make([
         *script,
-        LLMResult(tool_calls=[call("answer_step", outcome="all_up", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="already_on", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="on_backup", caller_said="power cut hai, ghar inverter pe chal raha hai",
                                    language="hi")]),
         LLMResult(content="A) Power cut, house is on inverter or backup"),   # the blind re-check agrees
@@ -309,14 +342,14 @@ def test_step_the_caller_already_answered_is_skipped_with_their_words(env):
     run(brain.respond(first))
     for reply in replies:
         run(brain.respond(reply))
-    assert session.run.current == "mcb" and len(llm.requests) == 4   # no look-ahead where nothing was said
-    final = run(brain.respond("MCB sab upar hain")).speech
+    assert session.run.current == "ac07_power" and len(llm.requests) == 3   # no look-ahead where nothing was said
+    final = run(brain.respond("wall switch on hai")).speech
     # The power-cut question is never read out: the caller had already said it.
-    assert ac_text("power_cut") not in final and ac_text("resolved_power_cut") in final
+    assert ac_text("ac07_house_power") not in final and ac_text("resolved_power_cut") in final
     assert session.outcome == "resolved" and session.resolution == "no_fault_power_cut"
-    assert "power_cut" not in session.presented
+    assert "ac07_house_power" not in session.presented
     skipped = session.run.path[-1]
-    assert skipped["node"] == "power_cut" and skipped["skipped"]
+    assert skipped["node"] == "ac07_house_power" and skipped["skipped"]
     assert skipped["caller_said"] == "power cut hai, ghar inverter pe chal raha hai"
     assert 'answered earlier: "power cut hai, ghar inverter pe chal raha hai"' in skipped["label"]
     look, check = llm.requests[-2], llm.requests[-1]
@@ -325,44 +358,44 @@ def test_step_the_caller_already_answered_is_skipped_with_their_words(env):
     assert check["tools"] == [] and "A) Power cut, house is on inverter or backup" in check["messages"][-1]["content"]
     assert "on_backup" not in check["messages"][-1]["content"]   # the checker doesn't see the model's pick
     assert session.latency[-1]["lookahead_rounds"] == 2   # one look-ahead round + one skip check
-    assert sum(1 for t in session.transcript if t["role"] == "user") == 5   # 6 without the skip
+    assert sum(1 for t in session.transcript if t["role"] == "user") == 4   # 5 without the skip
 
 
 def test_skip_the_check_disagrees_with_is_asked(env):
-    # Seen live: "saare MCB bhi upar hain" (all up) taken as "one switch is down".
+    # Seen live (on the old MCB step): "saare MCB bhi upar hain" (all up) taken as "one switch is down".
     brain, session, llm = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="remote_ok", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="already_on", language="hi")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="one_down", caller_said="saare MCB bhi upar hain", language="hi")]),
-        LLMResult(content="B"),   # the blind re-check: "All switches are up / on"
+        LLMResult(tool_calls=[call("answer_step", outcome="on_backup", caller_said="house mein light aa rahi hai", language="hi")]),
+        LLMResult(content="B"),   # the blind re-check: "Normal power is on"
     ])
     run(brain.respond("AC start nahi ho raha"))
     run(brain.respond("nahi, aisa kuch nahi"))
     run(brain.respond("remote ki screen theek hai"))
-    speech = run(brain.respond("Haan, wall switch on hai. Aur saare MCB bhi upar hain.")).speech
-    assert speech == ac_text("mcb") and session.run.current == "mcb"
-    assert "B) All switches are up / on" in llm.requests[-1]["messages"][-1]["content"]
+    speech = run(brain.respond("Haan, wall switch on hai. Aur house mein light aa rahi hai.")).speech
+    assert speech == ac_text("ac07_house_power") and session.run.current == "ac07_house_power"
+    assert "B) Normal power is on" in llm.requests[-1]["messages"][-1]["content"]
     assert not any(p.get("skipped") for p in session.run.path)
 
 
 def test_made_up_quote_is_rejected_and_the_step_is_asked(env):
-    first, script, replies = _ac_to_mcb("AC start nahi ho raha, ghar mein inverter laga hai")
+    first, script, replies = _ac_to_wall_switch("AC start nahi ho raha, ghar mein inverter laga hai")
     brain, session, llm = env.make([
         *script,
-        LLMResult(tool_calls=[call("answer_step", outcome="all_up", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="already_on", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="on_backup", caller_said="power cut hai, inverter pe chal raha hai",
                                    language="hi")]),
     ])
     run(brain.respond(first))
     for reply in replies:
         run(brain.respond(reply))
-    speech = run(brain.respond("MCB sab upar hain")).speech
-    assert speech == ac_text("power_cut")
-    assert session.run.current == "power_cut" and "power_cut" in session.presented
+    speech = run(brain.respond("wall switch on hai")).speech
+    assert speech == ac_text("ac07_house_power")
+    assert session.run.current == "ac07_house_power" and "ac07_house_power" in session.presented
     assert not any(p.get("skipped") for p in session.run.path)
-    assert len(llm.requests) == 6   # the look-ahead ran once and its answer was refused
+    assert len(llm.requests) == 5   # the look-ahead ran once and its answer was refused
 
 
 def test_real_words_about_another_step_are_not_evidence(env):
@@ -377,22 +410,22 @@ def test_real_words_about_another_step_are_not_evidence(env):
     run(brain.respond("AC start nahi ho raha, wall switch on hai"))
     run(brain.respond("nahi, aisa kuch nahi"))
     speech = run(brain.respond("Screen par sab dikh raha hai. Abhi power cut hai toh ghar inverter par chal raha hai.")).speech
-    assert speech == ac_text("wall_switch") and session.run.current == "wall_switch"
+    assert speech == ac_text("ac07_power") and session.run.current == "ac07_power"
     assert len(llm.requests) == 4 and not any(p.get("skipped") for p in session.run.path)
 
 
 def test_look_ahead_can_decline_and_the_step_is_read(env):
-    first, script, replies = _ac_to_mcb("AC start nahi ho raha. Abhi power cut hai, ghar inverter pe chal raha hai.")
+    first, script, replies = _ac_to_wall_switch("AC start nahi ho raha. Abhi power cut hai, ghar inverter pe chal raha hai.")
     brain, session, _ = env.make([
         *script,
-        LLMResult(tool_calls=[call("answer_step", outcome="all_up", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="already_on", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="ask_caller", caller_said="", language="hi")]),
     ])
     run(brain.respond(first))
     for reply in replies:
         run(brain.respond(reply))
-    assert run(brain.respond("MCB sab upar hain")).speech == ac_text("power_cut")
-    assert session.run.current == "power_cut" and session.outcome == "in_progress"
+    assert run(brain.respond("wall switch on hai")).speech == ac_text("ac07_house_power")
+    assert session.run.current == "ac07_house_power" and session.outcome == "in_progress"
 
 
 def test_safety_question_is_never_skipped(env):
@@ -438,13 +471,13 @@ def test_look_ahead_stops_after_two_rounds(env):
         LLMResult(content="B"),
     ])
     run(brain.respond("AC start nahi ho raha"))
-    speech = run(brain.respond("nahi, aisa kuch nahi. Remote ki screen theek hai, wall switch bhi on hai, MCB sab upar hain")).speech
+    speech = run(brain.respond("nahi, aisa kuch nahi. Remote ki screen theek hai, wall switch bhi on hai, light bhi hai")).speech
     # Round 1 skips the remote step, round 2 confirms it; then the budget is spent and the wall switch is read out.
-    assert speech == ac_text("wall_switch") and session.run.current == "wall_switch"
+    assert speech == ac_text("ac07_power") and session.run.current == "ac07_power"
     assert len(llm.requests) == 2 + LOOKAHEAD_ROUNDS and len(llm.responses) == 2
     assert session.latency[-1]["lookahead_rounds"] == LOOKAHEAD_ROUNDS
-    assert [p["node"] for p in session.run.path if p.get("skipped")] == ["remote_display"]
-    assert "remote_display" not in session.presented
+    assert [p["node"] for p in session.run.path if p.get("skipped")] == ["ac07_remote"]
+    assert "ac07_remote" not in session.presented
     # The technician handoff shows which answers came from the caller's earlier words.
     run(brain.respond("technician bhej do"))
     tried = [t["answer"] for t in session.ticket["summary"]["steps_tried"]]
@@ -458,8 +491,8 @@ def test_unasked_step_without_caller_words_is_rejected(env):
                               call("answer_step", outcome="remote_ok", language="hi")]),
     ])
     run(brain.respond("AC start nahi ho raha"))
-    assert run(brain.respond("nahi, aisa kuch nahi")).speech == ac_text("remote_display")
-    assert session.run.current == "remote_display"
+    assert run(brain.respond("nahi, aisa kuch nahi")).speech == ac_text("ac07_remote")
+    assert session.run.current == "ac07_remote"
 
 
 @pytest.mark.parametrize("quote,said,expected", [
@@ -487,7 +520,7 @@ def test_repeating_a_heard_step_gets_a_wait_phrase_not_the_step_again(env):
     ])
     run(brain.respond("AC on nahi ho raha"))
     run(brain.respond("nahi, aisa kuch nahi hai"))
-    assert session.run.current == "remote_display" and "remote_display" in session.presented
+    assert session.run.current == "ac07_remote" and "ac07_remote" in session.presented
     speech = run(brain.respond("ruko, main remote dhoond rahi hoon")).speech
     assert speech == brain._phrase("take_your_time")
     assert not any(e["type"] == "guard" for e in session.events)

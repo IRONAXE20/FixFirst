@@ -21,6 +21,7 @@ APPLIANCE_NAMES = {
     "stove": {"en": "gas stove", "hi": "gas stove"},
     "water_purifier": {"en": "water purifier", "hi": "RO water purifier"},
     "washer_semi": {"en": "semi-automatic washing machine", "hi": "semi-automatic washing machine"},
+    "otg": {"en": "OTG oven", "hi": "OTG oven"},
     "induction": {"en": "induction cooktop", "hi": "induction"},
     "furniture": {"en": "furniture item", "hi": "furniture"},
 }

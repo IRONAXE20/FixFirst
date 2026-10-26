@@ -29,13 +29,18 @@ def test_pages_and_config(client):
     cfg = client.get("/api/config").json()
     assert cfg["tenant"]["name"] == "RentBasket" and cfg["sarvam_ready"] is False
     assert len(client.get("/api/customers").json()) == 3
-    assert {p["appliance"] for p in client.get("/api/playbooks").json()} == {"ac", "washer", "washer_semi", "fridge", "inverter", "tv", "water_purifier", "stove"}
+    assert {p["appliance"] for p in client.get("/api/playbooks").json()} == {"ac", "washer", "fridge", "microwave"}
     assert client.get("/api/playbooks/ac_not_cooling").json()["entry"] == "safety_check"
     assert "gas" in client.get("/api/safety").json()
 
 
 def test_doc_search_finds_cited_passages(client):
-    hits = client.get("/api/docs/search", params={"q": "drain hose 5C"}).json()
+    # The brand manuals were archived with the move to RentBasket's SOP; uploaded manuals still go through
+    # the same index, so it is tested on the archived set.
+    from fixfirst.config import KNOWLEDGE_DIR
+    from fixfirst.knowledge import DocLibrary
+    assert client.get("/api/docs/search", params={"q": "drain hose 5C"}).json() == []
+    hits = DocLibrary([KNOWLEDGE_DIR / "archive" / "docs"]).search("drain hose 5C")
     assert hits and hits[0]["url"].startswith("https://")
 
 
@@ -130,7 +135,7 @@ def test_playbooks_are_stored_versioned_and_validated_before_saving(admin_client
     edited = yaml.safe_dump(doc, allow_unicode=True, sort_keys=False)
     assert c.put("/api/playbooks/ac_not_cooling", json={"yaml": edited}).status_code == 401   # no admin key
     H = {"X-Admin-Key": "admin-test"}
-    broken = dict(doc, nodes={**doc["nodes"], "mode_check": {**doc["nodes"]["mode_check"], "say": {"en": "only English"}}})
+    broken = dict(doc, nodes={**doc["nodes"], "ac01_mode": {**doc["nodes"]["ac01_mode"], "say": {"en": "only English"}}})
     r = c.put("/api/playbooks/ac_not_cooling", json={"yaml": yaml.safe_dump(broken, allow_unicode=True)}, headers=H)
     assert r.status_code == 422 and any("say" in e for e in r.json()["errors"])   # rejected, nothing saved
     r = c.put("/api/playbooks/ac_not_cooling", json={"yaml": edited, "by": "test", "base_version": 1}, headers=H)
@@ -141,3 +146,28 @@ def test_playbooks_are_stored_versioned_and_validated_before_saving(admin_client
     assert [h["version"] for h in c.get("/api/playbooks/ac_not_cooling/source").json()["history"]] == [2, 1]
     doc["title"]["en"] = original
     c.put("/api/playbooks/ac_not_cooling", json={"yaml": yaml.safe_dump(doc, allow_unicode=True, sort_keys=False)}, headers=H)
+
+
+def test_import_retires_playbooks_that_no_longer_have_a_file(tmp_path):
+    # Moving to RentBasket's SOP archived the TV, inverter, purifier, stove and semi-automatic playbooks:
+    # a database seeded before that must stop serving them.
+    from sqlalchemy import insert, select
+
+    from fixfirst import playbook_store
+    from fixfirst.config import now_utc
+    from fixfirst.db import get_engine, playbook_docs
+    from fixfirst.playbooks import PlaybookLibrary
+
+    engine = get_engine(f"sqlite:///{(tmp_path / 'retire.db').as_posix()}")
+    old = {"id": "tv_problem", "appliance": "tv", "entry": "a", "nodes": {"a": {"kind": "resolve", "say": {"en": "x", "hi": "x"}}}}
+    with engine.begin() as c:
+        c.execute(insert(playbook_docs).values(id="tv_problem", appliance="tv", status="draft-unreviewed", version=3,
+                                               doc=old, updated_at=now_utc(), updated_by="seed"))
+    library = PlaybookLibrary()
+    playbook_store.sync(engine, library)
+    assert "tv_problem" in library.playbooks
+    saved = playbook_store.import_files(engine, library)
+    assert set(saved) == {"ac_not_cooling", "fridge_not_cooling", "washer_problem", "microwave_problem"}
+    assert "tv_problem" not in library.playbooks
+    with engine.connect() as c:
+        assert "tv_problem" not in {r.id for r in c.execute(select(playbook_docs.c.id))}

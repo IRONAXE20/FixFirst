@@ -27,7 +27,7 @@ def test_demo_brain_drives_a_typed_call(env):
     run(brain.respond("my AC is not cooling"))
     assert session.run and session.run.current == "safety_check"
     run(brain.respond("no, nothing like that"))
-    assert session.run.current == "mode_check"
+    assert session.run.current == "ac01_air"
     run(brain.respond("please just send a technician"))
     assert session.outcome == "escalated"
 

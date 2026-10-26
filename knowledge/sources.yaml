@@ -1,5 +1,10 @@
 # Where each playbook step comes from. Steps are paraphrased (never copied) from these
 # pages; `official` marks manufacturer sources. Retrieved October 2026.
+rentbasket_sop:
+  title: RentBasket Appliance Troubleshooting SOP v1.0 (25 October 2026)
+  url: knowledge/sop/RentBasket_Appliance_Troubleshooting_SOP.md
+  publisher: RentBasket
+  official: true
 lg_in_wm_codes:
   title: LG India — Washing machine error codes explained
   url: https://www.lg.com/in/magazine/lg-washing-machine-error-codes-explained/

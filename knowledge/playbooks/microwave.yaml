@@ -1,0 +1,367 @@
+# Microwave (Haier / Panasonic / Midea): RentBasket SOP Part D, MW-01 to MW-10.
+#
+# Microwaves hold high voltage even when unplugged, so the customer only checks the plug and socket,
+# the controls, safe dishes, the door closing, and cleaning the removable tray. Never open the casing,
+# never run it empty, never use it with a damaged door, interior or tray, never bypass the interlock.
+# Burning, smoke or a microwave that won't stop (MW-08) and a damaged door (MW-06) are P0 safety cases.
+# Escalation notes carry the SOP playbook ID, its issue code and the priority.
+# The Hindi wording is FixFirst's translation of the SOP and still needs RentBasket's sign-off.
+id: microwave_problem
+appliance: microwave
+title: {en: "Microwave problem (RentBasket SOP MW-01 to MW-10)", hi: "Microwave की problem (RentBasket SOP MW-01 से MW-10)"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "Before we start, a quick safety check. Is there any smoke, burning smell or sparks, a shock from the microwave, a damaged door, hinge or glass, or does it run with the door open or not stop?"
+      hi: "शुरू करने से पहले एक छोटा safety check. क्या microwave से धुआँ, जलने की smell या चिंगारी, करंट, उसका door, hinge या glass टूटा हुआ है, या वो door खुला होने पर भी चलता है या बंद नहीं होता?"
+    outcomes:
+      no_hazard: {next: triage, label: "None of these"}
+      hazard_burning: {hazard: electrical, label: "Smoke, burning smell or sparks"}
+      hazard_shock: {hazard: electrical, label: "Shock or tingling from the microwave"}
+      hazard_door: {hazard: stop_use, label: "Door, hinge, latch, seal or glass damaged"}
+      hazard_wont_stop: {hazard: electrical, label: "Runs with the door open, or won't stop"}
+    sources: [rentbasket_sop]
+
+  triage:
+    say:
+      en: "Please tell me what exactly is happening with the microwave."
+      hi: "बताइए, microwave में exactly क्या हो रहा है?"
+    outcomes:
+      not_starting: {next: mw01_plug, label: "MW-01: No power, display blank"}
+      no_heat: {next: mw02_door, label: "MW-02: Runs but food doesn't heat"}
+      sparking: {next: mw03_stop, label: "MW-03: Sparks or flashes inside"}
+      turntable: {next: mw04_tray, label: "MW-04: Turntable not turning, or tray wobbling"}
+      buttons: {next: mw05_wet, label: "MW-05: Buttons or touch panel not responding"}
+      door: {next: mw06_check, label: "MW-06: Door won't close or latch, or looks damaged"}
+      noise: {next: mw07_kind, label: "MW-07: Unusual noise, grinding or vibration"}
+      burning_wont_stop: {hazard: electrical, label: "MW-08: Burning smell, smoke, or it won't stop"}
+      uneven_heating: {next: mw09_mode, label: "MW-09: Heats unevenly or slowly"}
+      error_code: {next: error_code, label: "MW-10: Error code or message on the display"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-01 no power / display blank --------------------------------------------------
+  mw01_plug:
+    say:
+      en: "With dry hands, please check that the microwave's plug is pushed fully into the socket and the switch is on. Please don't use a damaged extension cord, and don't touch the plug if it looks damaged. Was it loose or off?"
+      hi: "सूखे हाथों से देखिए कि microwave का plug socket में पूरा लगा है और switch on है। कोई खराब extension cord मत लगाइए, और plug खराब दिखे तो उसे मत छुइए। क्या वो ढीला था या switch off था?"
+    outcomes:
+      was_loose_or_off: {next: mw01_retry, label: "It was loose or off; fixed now"}
+      already_ok: {next: mw01_house_power, label: "Plugged in and on already"}
+      damaged: {hazard: stop_use, label: "The plug, cable or socket looks damaged"}
+    sources: [rentbasket_sop]
+
+  mw01_retry:
+    say:
+      en: "Is the display on now?"
+      hi: "क्या अब display on है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, the display is on"}
+      not_fixed: {next: mw01_house_power, label: "Still blank"}
+    sources: [rentbasket_sop]
+
+  mw01_house_power:
+    say:
+      en: "Is there normal power in the house right now?"
+      hi: "क्या अभी घर में normal बिजली है?"
+    outcomes:
+      power_cut: {next: resolved_power_cut, label: "No, there's a power cut"}
+      normal_power: {next: mw01_socket, label: "Yes, normal power"}
+      breaker_trips: {hazard: electrical, label: "The breaker or MCB keeps tripping"}
+    sources: [rentbasket_sop]
+
+  mw01_socket:
+    say:
+      en: "If it's easy and safe, plug a small appliance you know works, like a phone charger, into the same socket. Does that work?"
+      hi: "अगर आसान और safe हो, तो कोई छोटा appliance जो ठीक चलता हो, जैसे phone charger, उसी socket में लगा कर देखिए। क्या वो चलता है?"
+    outcomes:
+      socket_works: {next: esc_mw01, label: "The socket works; the microwave stays blank"}
+      socket_dead: {next: esc_mw01_socket, label: "The socket doesn't work either"}
+      skip: {next: esc_mw01, label: "Can't test it"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-02 runs but doesn't heat -----------------------------------------------------
+  mw02_door:
+    say:
+      en: "Please close the door firmly; it should click shut. Is it closing properly?"
+      hi: "कृपया door अच्छे से बंद कीजिए; बंद होने पर click की आवाज़ आनी चाहिए। क्या ये ठीक से बंद हो रहा है?"
+    outcomes:
+      closes: {next: mw02_mode, label: "Closes and clicks"}
+      wont_close: {next: mw06_check, label: "Doesn't close or latch"}
+    sources: [rentbasket_sop]
+
+  mw02_mode:
+    say:
+      en: "Is it set to the normal Microwave mode, and not Grill, Convection, or just the timer?"
+      hi: "क्या ये normal Microwave mode पर set है, Grill, Convection या सिर्फ़ timer पर नहीं?"
+    outcomes:
+      wrong_mode: {next: mw02_set, label: "It was on Grill, Convection or timer"}
+      microwave_mode: {next: mw02_test, label: "Already on Microwave mode"}
+    sources: [rentbasket_sop]
+
+  mw02_set:
+    say:
+      en: "Please choose the Microwave mode with high power. Tell me when it's set."
+      hi: "कृपया high power के साथ Microwave mode चुनिए। Set हो जाए तो बताइए।"
+    outcomes:
+      done: {next: mw02_test, label: "Set to Microwave, high power"}
+    sources: [rentbasket_sop]
+
+  mw02_test:
+    say:
+      en: "Let's do a simple test. Put some water in a microwave-safe cup or bowl and run it on high power for one minute. Never run it empty, and stop it at once if you see sparks or smoke or hear an odd noise. Is the water warm after a minute?"
+      hi: "चलिए एक आसान test करते हैं। Microwave-safe कप या bowl में थोड़ा पानी रखिए और high power पर एक मिनट चलाइए। इसे कभी खाली मत चलाइए, और चिंगारी, धुआँ या अजीब आवाज़ दिखे-सुने तो तुरंत बंद कर दीजिए। क्या एक मिनट बाद पानी गरम है?"
+    outcomes:
+      warm: {next: resolved, label: "Yes, the water got warm"}
+      not_warm: {next: esc_mw02, label: "The water didn't warm up"}
+      abnormal: {next: esc_mw02_stop, label: "Odd noise, smell or an error appeared"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-03 sparks / arcing ---------------------------------------------------------
+  mw03_stop:
+    say:
+      en: "Please stop the microwave right away with the Stop button. Was there anything metal inside, like foil, a steel bowl, a plate with a gold or silver border, or a twist tie?"
+      hi: "कृपया Stop button से microwave तुरंत बंद कर दीजिए। क्या अंदर कोई metal की चीज़ थी, जैसे foil, steel का bowl, सोने या चाँदी के border वाली plate, या कोई तार वाला tie?"
+    outcomes:
+      metal_inside: {next: mw03_remove, label: "Yes, something metal was inside"}
+      no_metal: {next: esc_mw03, label: "Nothing metal"}
+    sources: [rentbasket_sop]
+
+  mw03_remove:
+    say:
+      en: "Once it has cooled down, and only if you can reach the plug safely, unplug it and take the metal item out. Please don't scrape the inside. Do you see any burn mark or damage inside?"
+      hi: "ठंडा होने के बाद, और सिर्फ़ अगर plug तक safely पहुँच सकते हैं, तो plug निकाल कर metal वाली चीज़ बाहर निकाल लीजिए। अंदर से कुछ खुरचिए मत। क्या अंदर कोई जलने का निशान या नुकसान दिख रहा है?"
+    outcomes:
+      no_damage: {next: resolved_metal, label: "No damage inside"}
+      damaged: {next: esc_mw03_damage, label: "Burn mark or damage inside"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-04 turntable ---------------------------------------------------------------
+  mw04_tray:
+    say:
+      en: "Please stop the microwave first. Once it's cool, lift out the glass tray and the ring with small wheels under it, wipe away any food bits underneath, and put them back, with the tray sitting properly in its slot. Tell me when done."
+      hi: "पहले microwave बंद कीजिए। ठंडा होने पर glass tray और उसके नीचे का छोटे पहियों वाला ring निकालिए, नीचे का खाना पोंछ दीजिए, और दोनों वापस लगाइए, tray अपनी जगह पर ठीक से बैठे। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: mw04_load, label: "Tray and ring cleaned and refitted"}
+      cracked_or_broken: {next: esc_mw04, label: "The tray is cracked or the ring is broken"}
+    sources: [rentbasket_sop]
+
+  mw04_load:
+    say:
+      en: "Please put the food in the centre, so the dish doesn't touch the walls, and start it again. Is the tray turning now?"
+      hi: "कृपया खाना बीच में रखिए, ताकि बर्तन दीवारों को न छुए, और फिर से चलाइए। क्या अब tray घूम रही है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it turns now"}
+      not_fixed: {next: esc_mw04, label: "Still not turning, or grinding"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-05 buttons / touch panel ---------------------------------------------------
+  mw05_wet:
+    say:
+      en: "Did any water or other liquid spill on the buttons or panel?"
+      hi: "क्या buttons या panel पर पानी या कोई और liquid गिरा था?"
+    outcomes:
+      spilled: {next: esc_mw05_wet, label: "Yes, liquid spilled on the panel"}
+      no_spill: {next: mw05_lock, label: "No spill"}
+    sources: [rentbasket_sop]
+
+  mw05_lock:
+    say:
+      en: "Do you see a lock or key symbol on the display?"
+      hi: "क्या display पर lock या चाबी का निशान दिख रहा है?"
+    outcomes:
+      lock_shown: {next: esc_mw05_lock, label: "A lock symbol is showing"}
+      no_lock: {next: mw05_restart, label: "No lock symbol"}
+    sources: [rentbasket_sop]
+
+  mw05_restart:
+    say:
+      en: "Let's try one normal restart. Switch it off at the wall switch, wait one minute, then switch it on again. Do the buttons work now?"
+      hi: "चलिए एक बार normal restart करते हैं। Wall switch से बंद कीजिए, एक मिनट रुकिए, फिर on कीजिए। क्या अब buttons काम कर रहे हैं?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, the buttons work"}
+      not_fixed: {next: esc_mw05, label: "Still not responding"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-06 door ------------------------------------------------------------------
+  mw06_check:
+    say:
+      en: "Please don't use the microwave until the door closes properly. Is the door, hinge, latch, seal or glass visibly broken or damaged?"
+      hi: "जब तक door ठीक से बंद न हो, कृपया microwave मत चलाइए। क्या door, hinge, latch, seal या glass कहीं से टूटा या खराब दिख रहा है?"
+    outcomes:
+      damaged: {hazard: stop_use, label: "Yes, visibly damaged"}
+      no_damage: {next: mw06_clean, label: "No visible damage"}
+    sources: [rentbasket_sop]
+
+  mw06_clean:
+    say:
+      en: "With the microwave switched off and cool, wipe any food bits from the door edge and the frame with a soft cloth. Please don't force the door. Does it close and click shut now?"
+      hi: "Microwave बंद और ठंडा होने पर, door के किनारे और frame से खाने के टुकड़े नरम कपड़े से पोंछ दीजिए। Door को ज़बरदस्ती मत बंद कीजिए। क्या अब ये बंद होकर click करता है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it closes and clicks"}
+      not_fixed: {next: esc_mw06, label: "Still doesn't close or latch"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-07 noise ----------------------------------------------------------------
+  mw07_kind:
+    say:
+      en: "Does the noise sound like grinding or an electrical buzz, or more like a rattle from the tray?"
+      hi: "आवाज़ घिसने या बिजली की भिनभिनाहट जैसी है, या tray की खड़खड़ जैसी?"
+    outcomes:
+      grinding_or_buzz: {next: esc_mw07_stop, label: "Grinding or electrical buzzing"}
+      rattle: {next: mw07_tray, label: "A rattle from the tray"}
+    sources: [rentbasket_sop]
+
+  mw07_tray:
+    say:
+      en: "When it's off and cool, check that the glass tray and the ring under it are sitting properly, and that the dish doesn't touch the walls. Is the noise gone now?"
+      hi: "बंद और ठंडा होने पर देखिए कि glass tray और उसके नीचे का ring ठीक से बैठे हैं, और बर्तन दीवारों को नहीं छू रहा। क्या अब आवाज़ बंद हो गई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, quiet now"}
+      not_fixed: {next: esc_mw07, label: "Still noisy"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-09 uneven or slow heating -----------------------------------------------------
+  mw09_mode:
+    say:
+      en: "Is it on the normal Microwave mode, with the right power level and time for the food?"
+      hi: "क्या ये normal Microwave mode पर, खाने के हिसाब से सही power level और time पर है?"
+    outcomes:
+      settings_ok: {next: mw09_dish, label: "Yes, the settings are right"}
+      settings_wrong: {next: mw09_set, label: "The mode or power was wrong"}
+    sources: [rentbasket_sop]
+
+  mw09_set:
+    say:
+      en: "Please choose the Microwave mode with a suitable power level and time. Tell me when it's set."
+      hi: "कृपया सही power level और time के साथ Microwave mode चुनिए। Set हो जाए तो बताइए।"
+    outcomes:
+      done: {next: mw09_dish, label: "Settings changed"}
+    sources: [rentbasket_sop]
+
+  mw09_dish:
+    say:
+      en: "Please use a microwave-safe dish with no metal, foil or gold or silver border, spread the food evenly, and stir it halfway if the food's instructions say so. Does it heat better now?"
+      hi: "कृपया microwave-safe बर्तन इस्तेमाल कीजिए, जिसमें metal, foil या सोने-चाँदी का border न हो, खाना बराबर फैलाइए, और खाने के instructions में लिखा हो तो बीच में चला दीजिए। क्या अब बेहतर गरम हो रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, heats better"}
+      not_fixed: {next: mw02_test, label: "Still weak across different foods"}
+    sources: [rentbasket_sop]
+
+  # ---- MW-10 error code: recorded, never interpreted ------------------------------------
+  error_code:
+    say:
+      en: "What does the display show? Please read me the letters and numbers exactly, and tell me the brand written on the microwave."
+      hi: "Display पर क्या दिख रहा है? अक्षर और नंबर मुझे ठीक वैसे ही पढ़ कर बताइए, और microwave पर लिखा brand भी बताइए।"
+    outcomes:
+      code_given: {next: esc_error_code, label: "Caller read out the code"}
+      no_code: {next: triage, label: "No code visible after all"}
+    sources: [rentbasket_sop]
+
+  # ---- endings -----------------------------------------------------------------------
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "Great, the microwave seems to be working normally again. I've noted what fixed it. Please contact us if the same problem comes back."
+      hi: "बहुत बढ़िया, microwave फिर से normal चल रहा लगता है। मैंने note कर लिया है कि किस step से ठीक हुआ। अगर यही problem फिर आए, तो हमें बता दीजिए।"
+  resolved_metal:
+    kind: resolve
+    resolution: usage_guidance
+    say:
+      en: "The sparks were most likely from the metal. Please use only microwave-safe dishes. If you see sparks again with nothing metal inside, stop it and don't use it again until we've checked it."
+      hi: "चिंगारी शायद metal की वजह से थी। कृपया सिर्फ़ microwave-safe बर्तन इस्तेमाल कीजिए। अगर बिना metal के फिर से चिंगारी दिखे, तो इसे बंद कर दीजिए और हमारे check करने तक दोबारा मत चलाइए।"
+  resolved_power_cut:
+    kind: resolve
+    resolution: no_fault_power_cut
+    say:
+      en: "Then the microwave should work once the power is back. If it doesn't come on after that, just call us again."
+      hi: "तो बिजली वापस आने पर microwave चलना चाहिए। अगर उसके बाद भी on न हो, तो हमें फिर से call कर लीजिए।"
+
+  esc_mw01:
+    kind: escalate
+    likely_cause: "MW-01 MW_NO_POWER (P2): display blank with plug in and power available"
+    technician_note: "Check cord, fuse and power supply. Customer not asked to open the casing (high voltage)."
+  esc_mw01_socket:
+    kind: escalate
+    say:
+      en: "That socket may not have power. Please don't use a damaged extension cord or overload another socket in the meantime."
+      hi: "उस socket में शायद बिजली नहीं आ रही। तब तक कोई खराब extension cord मत लगाइए, और किसी दूसरे socket पर ज़्यादा load मत डालिए।"
+    likely_cause: "MW-01 MW_NO_POWER (P2): the wall socket itself seems dead"
+    technician_note: "Household socket or wiring may be the cause: check the outlet before the microwave."
+  esc_mw02:
+    kind: escalate
+    say:
+      en: "Please don't use the microwave for now; it needs a technician to check it."
+      hi: "कृपया अभी microwave मत चलाइए; इसे technician को check करना होगा।"
+    likely_cause: "MW-02 MW_RUNS_NO_HEAT (P2): runs but a cup of water doesn't heat on Microwave mode, high power"
+    technician_note: "Microwave service: magnetron, diode, capacitor or door switches. High voltage; on-site or workshop only."
+  esc_mw02_stop:
+    kind: escalate
+    say:
+      en: "Please stop using the microwave until our technician has checked it."
+      hi: "कृपया technician के check करने तक microwave इस्तेमाल मत कीजिए।"
+    likely_cause: "MW-02 MW_RUNS_NO_HEAT (P1): abnormal noise, smell or error during the water test"
+    technician_note: "Microwave service; record what the caller noticed."
+  esc_mw03:
+    kind: escalate
+    say:
+      en: "Please don't use the microwave again until our technician has checked it."
+      hi: "कृपया technician के check करने तक microwave दोबारा मत चलाइए।"
+    likely_cause: "MW-03 MW_SPARKING (P1): sparks inside with nothing metal in the cavity"
+    technician_note: "Check waveguide cover, cavity coating and stirrer. Customer told not to reuse."
+  esc_mw03_damage:
+    kind: escalate
+    say:
+      en: "Please don't use the microwave again until our technician has checked it."
+      hi: "कृपया technician के check करने तक microwave दोबारा मत चलाइए।"
+    likely_cause: "MW-03 MW_SPARKING (P1): burn mark or damage inside after sparking"
+    technician_note: "Inspect cavity coating and waveguide cover; assess repair versus replacement."
+  esc_mw04:
+    kind: escalate
+    say:
+      en: "Please don't use the microwave without the tray and ring in place."
+      hi: "कृपया tray और ring के बिना microwave मत चलाइए।"
+    likely_cause: "MW-04 MW_TURNTABLE (P3): turntable doesn't turn after refitting, or tray/ring broken"
+    technician_note: "Carry tray, roller ring and coupler for this model; check the turntable motor."
+  esc_mw05:
+    kind: escalate
+    likely_cause: "MW-05 MW_CONTROL_PANEL (P2): buttons don't respond after one restart"
+    technician_note: "Check the touch panel and control board."
+  esc_mw05_wet:
+    kind: escalate
+    say:
+      en: "Please stop using it, switch it off at the wall switch only if that's safe, and let the outside dry. Please don't spray anything on the panel."
+      hi: "कृपया इसे इस्तेमाल मत कीजिए, सिर्फ़ safe हो तो wall switch से बंद कर दीजिए, और बाहर से सूखने दीजिए। Panel पर कुछ भी spray मत कीजिए।"
+    likely_cause: "MW-05 MW_CONTROL_PANEL (P2): liquid spilled on the control panel"
+    technician_note: "Check for liquid inside the panel before use."
+  esc_mw05_lock:
+    kind: escalate
+    likely_cause: "MW-05 MW_CONTROL_PANEL (P3): child/control lock symbol showing"
+    technician_note: "The team can share this model's unlock steps from its manual, or the technician can unlock on site."
+  esc_mw06:
+    kind: escalate
+    say:
+      en: "Please don't use the microwave until the door closes properly; the technician will check it."
+      hi: "जब तक door ठीक से बंद न हो, microwave मत चलाइए; technician इसे check करेंगे।"
+    likely_cause: "MW-06 MW_DOOR_LATCH (P0): door doesn't close or latch reliably; customer told not to use it"
+    technician_note: "Inspect door, hinge, latch, seal and interlock switches; never bypass the interlock."
+  esc_mw07:
+    kind: escalate
+    likely_cause: "MW-07 MW_NOISE (P2): noise persists with the tray seated properly"
+    technician_note: "Check turntable motor, fan and internal parts."
+  esc_mw07_stop:
+    kind: escalate
+    say:
+      en: "Please stop using the microwave until our technician has checked it."
+      hi: "कृपया technician के check करने तक microwave इस्तेमाल मत कीजिए।"
+    likely_cause: "MW-07 MW_NOISE (P1): grinding or electrical buzzing; customer told to stop use"
+    technician_note: "Check fan, motor and high-voltage parts."
+  esc_error_code:
+    kind: escalate
+    likely_cause: "MW-10 MW_ERROR_CODE: error code shown on the display (see code; not interpreted on the call)"
+    technician_note: "Look up the code in this exact model's manual; never infer it from another model or brand."
+    sources: [rentbasket_sop]

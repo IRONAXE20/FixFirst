@@ -109,7 +109,7 @@ def test_brain_provider_prefers_claude_and_ignores_bolna_keys():
 # ---- RentBasket --------------------------------------------------------------------------
 @pytest.mark.parametrize("name,appliance", [
     ("Window AC", "ac"), ("Split AC - 1.5 Ton", "ac"), ("Fridge 190 Ltr", "fridge"), ("Double Door Fridge", "fridge"),
-    ("Fully Automatic Washing M/c", "washer"), ("Semi Automatic Washing Machine", "washer_semi"),
+    ("Fully Automatic Washing M/c", "washer"), ("Semi Automatic Washing Machine", "washer"), ("OTG 28 L", "otg"),
     ('SMART LED 32"', "tv"), ("Inverter with Double Battery", "inverter"), ("Water Purifier - Under-the-Counter (UTC)", "water_purifier"),
     ("Gas Stove - 3 Burner", "stove"), ("Microwave (Solo) 20 L", "microwave"), ("Induction Cooker", "induction"),
     ("Wooden Almirah 6.5x3 ft", "furniture"), ("3-Seater Fabric Sofa", "furniture"),

@@ -2,7 +2,7 @@
 
 **Voice-first appliance first aid for rental and service companies, starting with RentBasket.**
 
-A customer calls when an appliance they rent stops working (AC, washing machine, fridge, TV, inverter, water purifier or gas stove), describes it in Hindi, English or Hinglish, and an AI agent walks them through safe checks one step at a time. If it can't be fixed by phone, FixFirst books a ticket, sends the customer a WhatsApp with a photo-upload link, and sends the service team a technician handoff (steps already ruled out, likely cause, parts to carry). When the problem is closed, the agent asks "anything else?" and, if not, says goodbye and ends the call.
+A customer calls when an appliance they rent stops working (AC, fridge, washing machine or microwave), describes it in Hindi, English or Hinglish, and an AI agent walks them through safe checks one step at a time. If it can't be fixed by phone, FixFirst books a ticket, sends the customer a WhatsApp with a photo-upload link, and sends the service team a technician handoff (steps already ruled out, likely cause, parts to carry). When the problem is closed, the agent asks "anything else?" and, if not, says goodbye and ends the call.
 
 **Live setup (October 2026):**
 
@@ -82,6 +82,22 @@ After a problem is fixed, booked or set for a follow-up, the agent asks "क्�
 
 ## Playbooks (stored in Supabase)
 
+The playbooks come from **RentBasket's Appliance Troubleshooting SOP** (`knowledge/sop/`, v1.0, 25 Oct 2026):
+
+| Playbook | SOP part | Covers |
+|---|---|---|
+| `ac_not_cooling` | Part A, AC-01 to AC-12 | Lloyd / Voltas split and window AC |
+| `fridge_not_cooling` | Part B, FR-01 to FR-13 | Whirlpool / Lloyd, direct-cool and frost-free |
+| `washer_problem` | Part C, WM-01 to WM-12 | Whirlpool top-load, front-load and semi-automatic |
+| `microwave_problem` | Part D, MW-01 to MW-10 | Haier / Panasonic / Midea |
+
+- Each starts with the SOP's safety gate; the triage question routes to one SOP playbook, and every step is one instruction with yes/no-style answers. "Technician" works at every step.
+- The SOP's boundaries are built in: no ladders, stools or work at height, no switchboards or MCB resets, no drain, pump or inlet filters, no tightening hoses, no moving or tilting appliances, no unplugged defrost, no feet adjusting, one normal restart at most. A breaker that keeps tripping, a damaged microwave door, a washer moving violently and a chemical smell are stop-use hazards (P0).
+- Every technician ticket names the SOP playbook, its issue code and priority (for example `AC-01 AC_NO_COOLING (P1)`) with the SOP's technician notes, including that refrigerant work goes to a qualified technician (not Digamber).
+- Error codes are recorded exactly and never interpreted, as the SOP requires; the old LG/Samsung code table is in `knowledge/archive/`.
+- TV, inverter, water purifier, gas stove and OTG aren't in the SOP: those calls go straight to a technician. Their old playbooks are in `knowledge/archive/`.
+- The visit promise names no day or time (SOP section 7).
+
 - Stored in the `fixfirst.playbooks` table, one row per appliance, with every saved version in `fixfirst.playbook_history`.
 - **Edit on `/knowledge` → ✏️ Edit.** The editor shows the playbook as YAML. **Check** validates it; **Save** needs the admin key (`ADMIN_KEY`) and stores a new version that calls use straight away. Nothing is saved if a step is missing a language, an answer leads nowhere, a step can't be reached, or a source doesn't exist. If two people edit at once, the second save is refused until they reload.
 - `knowledge/playbooks/*.yaml` seed an empty table and add any playbook the table doesn't have yet. Once a playbook is in the table, **the table wins** over the file.
@@ -94,7 +110,8 @@ After a problem is fixed, booked or set for a follow-up, the agent asks "क्�
   .venv\Scripts\python -m fixfirst playbooks import
   ```
   stores every YAML file as a new version (overriding edits made on `/knowledge`).
-- All playbooks are `draft-unreviewed` until RentBasket's senior technician signs them off. The water purifier steps and the stove's burner-cap step cite third-party pages.
+- Running `playbooks import` also retires playbooks that no longer have a YAML file, so the archived ones stop being served.
+- All playbooks are `draft-unreviewed` until RentBasket signs off the spoken wording: the SOP gives checks, not scripts, so the English and Hindi sentences are FixFirst's.
 
 ## Photos
 
@@ -143,7 +160,7 @@ Until then every message lands in the outbox on `/ops`.
 | `fixfirst/bolna.py` | Bolna custom-LLM bridge: call matching from webhooks, streaming replies, hang-up check, end of call |
 | `fixfirst/bolna_admin.py` | `bolna-setup` / `bolna-call` commands |
 | `fixfirst/rentbasket.py` | Customer lookup from RentBasket's API, copied into the local tables |
-| `fixfirst/playbooks.py` | Parses, validates and runs playbooks; the error-code lookup |
+| `fixfirst/playbooks.py` | Parses, validates and runs playbooks; the error-code lookup (empty: codes aren't interpreted) |
 | `fixfirst/playbook_store.py` | Playbooks in the database: seed, versioned save, import/export |
 | `fixfirst/photos.py` | Photos in the database and their retention |
 | `fixfirst/safety.py` | Hazard screen and the unsafe-instruction guard |
@@ -152,7 +169,7 @@ Until then every message lands in the outbox on `/ops`.
 | `fixfirst/whatsapp.py` | Meta Cloud API sender with a dry-run outbox |
 | `fixfirst/voice.py` | Browser/Exotel voice through Pipecat (local only) |
 | `fixfirst/eval.py` | Plays `tests/scenarios.yaml` (36 scenarios) against the real agent and prints the scorecard |
-| `knowledge/` | Playbook seeds, sources, safety scripts, washer error codes, tenant settings, document library |
+| `knowledge/` | RentBasket's SOP, playbook seeds, sources, safety scripts, tenant settings, document library, archive |
 | `render.yaml`, `requirements-render.txt` | Render deployment |
 
 ## Status

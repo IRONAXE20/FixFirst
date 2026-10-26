@@ -48,7 +48,8 @@ _STRONG_DENIAL = re.compile(r"^\W*(no|nope|nahi|nahin|nai|na|नहीं|ना
 # any of them gets one safety question first instead of the emergency script.
 _DANGER_WORD = re.compile(r"(smell|spark|chingar|dhu|smoke|burn|jalne|jala|jali|current|shock|jhatk|tingl|gas|aag|fire|flame|"
                           r"leak|paani|pani|water|wet|geela|battery|batri|hurt|behosh|unconscious|melt|pighal|"
-                          r"स्मेल|गंध|बदबू|चिंगार|धुआ|स्मोक|करंट|शॉक|झटक|गैस|आग|जलने|पानी|लीक|बैटरी|बेहोश|गीला)")
+                          r"trip|toot|tut|broke|damag|chemical|"
+                          r"स्मेल|गंध|बदबू|चिंगार|धुआ|स्मोक|करंट|शॉक|झटक|गैस|आग|जलने|पानी|लीक|बैटरी|बेहोश|गीला|ट्रिप|टूट)")
 _SWITCHGEAR = re.compile(r"switch|स्विच|\bmcb\b|main board|meter|मीटर")
 _HAZARD_WORD_STRICT = re.compile(r"(smell|spark|chingar|dhu|smoke|burn|jalne|leak|current|shock|tingl|गंध|स्मेल|चिंगार|धुआ|करंट)")
 
@@ -345,13 +346,14 @@ FLOW
 5. If the caller says it's working again outside a step, call mark_resolved.
 
 SAFETY COMES FIRST
-If the caller mentions anything that could be dangerous (a gas smell, a burning smell, sparks, smoke, fire, an electric shock or current from the appliance, water near plugs, sockets or wires, a swollen or leaking battery, or someone hurt), call flag_safety_concern immediately, even if unsure. Never continue troubleshooting after that.
+If the caller mentions anything that could be dangerous (a gas smell, a burning smell, sparks, smoke, fire, an electric shock or current from the appliance, water near plugs, sockets or wires, a breaker or MCB that keeps tripping, a swollen or leaking battery, or someone hurt), call flag_safety_concern immediately, even if unsure. Never continue troubleshooting after that.
+Use kind "stop_use" for the other stop-use faults in RentBasket's safety gate: a damaged microwave door, hinge or glass, a microwave that runs with the door open, a washing machine moving violently or flooding the floor, a strong chemical smell from an AC or fridge, or a damaged plug or cable.
 These are NOT hazards on their own; keep following the playbook, which covers them:
 - "light/display/indicator jal raha hai" means it is ON (lit), not burning. Only "jalne ki smell", "kuch jal raha hai" or "aag" means burning.
-- The power going off when an appliance starts, a tripped MCB, or "current/light nahi aa raha" (no power) is an electrical fault for the playbook's MCB steps, not an emergency.
+- "current/light nahi aa raha" (no power) or a power cut is a playbook fault, not an emergency. A breaker that trips once is a playbook answer; one that keeps tripping is a hazard.
 - "AC ki gas khatam / gas bharni hai" is refrigerant, a technician job, not a gas leak.
-- A low, yellow or uneven gas-stove flame, or a burner that won't light, is a stove fault for the stove playbook, unless the caller smells gas, hears hissing, or something caught fire.
-- Water leaking from a fridge, washing machine or purifier is a playbook fault unless it is near a plug, socket, board or wires.
+- A low, yellow or uneven gas-stove flame, or a burner that won't light, is a stove fault for a technician, unless the caller smells gas, hears hissing, or something caught fire.
+- Water leaking from an AC, fridge or washing machine is a playbook fault unless it is near a plug, socket, board or wires.
 
 THINGS YOU DON'T DO
 - Don't discuss prices, deposits, damage charges, rent or refunds: say the {company} team will help with that.
@@ -1073,7 +1075,9 @@ class Brain:
             self.s.publish("guard_hazard", text=text)
             return self._hazard_hold()
         node = self.s.run.node if self.s.run and not self.s.run.finished and not self.s.closed else None
-        if off_script and node and not node.terminal and node.id in self.s.presented:
+        # The safety question is a question, not a step being carried out, so it is never "echoed".
+        if (off_script and node and not node.terminal and node.id in self.s.presented
+                and node.id != self.s.run.playbook.entry):
             words = _vocab([off_script])
             if words and len(words & _node_vocab(node)) >= 0.6 * len(words):
                 # The model repeated the step the caller already heard (usually while they're doing it):

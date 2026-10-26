@@ -12,7 +12,7 @@ import yaml
 
 from .config import KNOWLEDGE_DIR, Tenant
 
-HAZARD_KINDS = ("fire", "gas", "injury", "electrical", "battery", "water_electric")
+HAZARD_KINDS = ("fire", "gas", "injury", "electrical", "battery", "water_electric", "stop_use")
 _DEVANAGARI = "ऀ-ॿ"
 # Sentences end at these; commas don't, so "no smell, sparks or smoke" keeps its "no".
 _PUNCT = re.compile(r"[.!?;:।॥()\[\]\"“”‘’…\n]+")
