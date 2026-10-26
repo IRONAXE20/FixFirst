@@ -77,9 +77,11 @@ def detect_language(text: str) -> str | None:
     return None
 
 
-_DONE = re.compile(r"\b(no|nope|nothing|that'?s all|that is all|all good|no thanks?|thanks?|thank you|bye|goodbye|nahi|nahin|nai|"
-                   r"na|bas|kuch nahi|kuchh nahi|nahi ji|bas itna|bas yahi|shukriya|dhanyavaad|dhanyawad|theek hai|thik hai|"
-                   r"ok|okay|alvida)\b|नहीं|नही|बस|कुछ नहीं|धन्यवाद|शुक्रिया|थैंक|ठीक है|बाय|अलविदा|ओके")
+_DONE = re.compile(r"\b(nothing|that'?s all|that is all|all good|no thanks?|thanks?|thank you|bye|goodbye|"
+                   r"bas|kuch nahi|kuchh nahi|nahi ji|bas itna|bas yahi|shukriya|dhanyavaad|dhanyawad|theek hai|thik hai|"
+                   r"ok|okay|alvida)\b|बस|कुछ नहीं|धन्यवाद|शुक्रिया|थैंक|ठीक है|बाय|अलविदा|ओके")
+# A bare "no" counts only as the first word: "नहीं, धन्यवाद" is done, "मुश्किल नहीं हो जाएगा" ("it won't be hard") isn't.
+_DONE_NO = re.compile(r"^(no|nope|nahi|nahin|nai|na|नहीं|नही|ना)\b|^(नहीं|नही|ना)(?![ऀ-ॿ])")
 _MORE = re.compile(r"\b(ac|fridge|frij|washing|machine|washer|tv|inverter|battery|purifier|stove|chulha|geyser|microwave|"
                    r"another|also|aur ek|ek aur|bhi|kharab|problem|issue|leak|band hai|chal nahi|nahi chal|kaam nahi|"
                    r"technician|kab|when|kitne)\b|एसी|फ्रिज|मशीन|टीवी|इन्वर्टर|बैटरी|प्यूरीफायर|स्टोव|चूल्हा|खराब|प्रॉब्लम|"
@@ -100,7 +102,7 @@ _ACTION_DONE = re.compile(r"(kar diya|kar di|kar diye|ho gaya|ho gayi|nikal diy
 def caller_is_done(text: str) -> bool:
     """After "anything else?": a short no / thanks / bye, with no new appliance or problem in it."""
     t = text.lower().strip()
-    return len(t.split()) <= 8 and bool(_DONE.search(t)) and not _MORE.search(t)
+    return len(t.split()) <= 8 and bool(_DONE.search(t) or _DONE_NO.search(t)) and not _MORE.search(t)
 
 
 def technician_requested(text: str) -> bool:
@@ -256,6 +258,10 @@ PHRASES = {
         "hi": "ठीक है! {company} को call करने के लिए धन्यवाद। आपका दिन शुभ हो!",
         "en": "Alright! Thank you for calling {company}. Have a nice day!",
     },
+    "goodbye_again": {
+        "hi": "जी, धन्यवाद। ध्यान रखिए, अलविदा!",
+        "en": "Thank you. Take care, goodbye!",
+    },
     "no_playbook": {
         "hi": "इस {appliance} के लिए अभी मेरे पास guided steps नहीं हैं, इसलिए मैं technician book कर रही हूँ।",
         "en": "I don't have guided steps for the {appliance} yet, so I'm booking a technician for you.",
@@ -277,8 +283,8 @@ PHRASES = {
         "en": "Just to be safe: is there any burning smell, sparks, smoke, or water near the plug, or did anyone get a shock?",
     },
     "steps_only": {
-        "hi": "मैं सिर्फ़ हमारे तय steps ही बता सकती हूँ, तो चलिए उन्हीं से चलते हैं:",
-        "en": "I can only guide you through our checked steps, so let's continue with them:",
+        "hi": "जी, समझ गई। बस ये बता दीजिए:",
+        "en": "Got it. Just tell me this:",
     },
     "repeat": {
         "hi": "माफ़ कीजिए, मैं ठीक से समझ नहीं पाई।",
@@ -434,6 +440,12 @@ class Brain:
             # After the safety script, "theek hai / thank you" ends the call with a short safe goodbye.
             speech = self._phrase("safety_goodbye", minutes=self.tenant.urgent_callback_minutes)
             self.s.end_requested = True
+            self.s.messages.append({"role": "assistant", "content": speech})
+            self.s.publish("goodbye")
+            result = TurnResult(speech=speech, hazard=self.s.hazard)
+        elif self.s.end_requested and not _MORE.search(text.lower()):
+            # The goodbye was said and the caller answers ("ठीक है थैंक यू"): end again, with a hang-up phrase.
+            speech = self._phrase("goodbye_again")
             self.s.messages.append({"role": "assistant", "content": speech})
             self.s.publish("goodbye")
             result = TurnResult(speech=speech, hazard=self.s.hazard)

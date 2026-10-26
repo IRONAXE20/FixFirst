@@ -286,14 +286,14 @@ def test_bolna_hangup_check_says_yes_only_after_the_goodbye(phone):
     phone.llm.responses.append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", caller_requested=True,
                                                           language="hi")]))
     first = "mera washing machine kharab hai"
-    phone.post("/bolna/v1/chat/completions", json=_body(first), headers=AUTH)
+    booked = _spoken(phone.post("/bolna/v1/chat/completions", json=_body(first), headers=AUTH))
     check = {"model": "fixfirst", "stream": False, "messages": [
         {"role": "system", "content": "You are an AI assistant determining if a conversation is complete. "
                                       'Respond in json {"hangup": "Yes"} or {"hangup": "No"}'},
         {"role": "user", "content": f"user: {first}\nassistant: ..."}]}
     r = phone.post("/bolna/v1/chat/completions", json=check, headers=AUTH)
     assert json.loads(r.json()["choices"][0]["message"]["content"]) == {"hangup": "No"}
-    r = phone.post("/bolna/v1/chat/completions", json=_body(first, "booked...", "nahi bas, thank you"), headers=AUTH)
+    r = phone.post("/bolna/v1/chat/completions", json=_body(first, booked, "nahi bas, thank you"), headers=AUTH)
     assert "दिन शुभ हो" in _spoken(r)
     r = phone.post("/bolna/v1/chat/completions", json=check, headers=AUTH)
     assert json.loads(r.json()["choices"][0]["message"]["content"]) == {"hangup": "Yes"}
@@ -318,3 +318,30 @@ def test_bolna_call_as_a_customer_is_a_test_call(phone):
     assert phone.get("/api/calls").json()[0]["customer_id"] == "RB9810000000"
     customer_msgs = [m for m in phone.get("/api/outbox").json() if m["audience"] == "customer"]
     assert customer_msgs and all(m["to"] is None for m in customer_msgs)   # nothing to the real customer
+
+
+def test_bolna_reply_the_caller_never_heard_is_undone_and_their_pieces_answered_together(phone):
+    # Live call 26 Oct: "नहीं यार।" then "हाँ, सब कुछ नहीं है।" arrived as two turns. Bolna dropped our reply to
+    # the first piece (the caller kept talking), yet the playbook had moved on and took the second piece as
+    # the answer to a question the caller never heard.
+    from fixfirst.playbooks import get_library
+    ac = get_library().for_appliance("ac")
+    phone.llm.responses.extend([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
+    ])
+    head = [{"role": "system", "content": SYSTEM}, {"role": "assistant", "content": "नमस्ते! बताइए, क्या problem है?"},
+            {"role": "user", "content": "मेरा एसी ठीक से कूल नहीं कर रहा।"}]
+    post = lambda msgs: _spoken(phone.post("/bolna/v1/chat/completions", headers=AUTH,
+                                           json={"model": "fixfirst", "messages": msgs, "stream": True}))
+    safety = post(head)
+    assert safety == ac.node("safety_check").text("hi")
+    head.append({"role": "assistant", "content": safety})
+    assert post(head + [{"role": "user", "content": "नहीं यार।"}]) == ac.node("ac01_air").text("hi")
+    # Bolna's next request: no assistant message after "नहीं यार।", so the air question was never spoken.
+    again = post(head + [{"role": "user", "content": "नहीं यार।"}, {"role": "user", "content": "हाँ, सब कुछ नहीं है।"}])
+    assert again == ac.node("ac01_air").text("hi")
+    assert phone.llm.requests[-1]["messages"][-1]["content"] == "नहीं यार। हाँ, सब कुछ नहीं है।"
+    path = phone.get("/api/calls").json()[0]["path"]
+    assert [p["node"] for p in path] == ["safety_check", "triage"]   # the safety question answered once

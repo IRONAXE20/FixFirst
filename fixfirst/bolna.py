@@ -8,6 +8,7 @@ So the bridge also learns calls from Bolna's status webhooks, which arrive befor
 the execution id and the phone numbers: a new conversation adopts the most recent unclaimed execution.
 """
 import asyncio
+import copy
 import hashlib
 import hmac
 import json
@@ -95,9 +96,25 @@ class BolnaCall:
     first_words: str = ""
     users_seen: int = 0
     last_speech: str = ""
-    presented_before_last: set[str] = field(default_factory=set)
+    last_words: str = ""                # the caller's words behind last_speech
+    checkpoint: dict | None = None      # session state from before last_speech's turn
     last_active: float = field(default_factory=time.monotonic)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+def checkpoint(session) -> dict:
+    """A copy of the session's state, to undo a turn whose reply the caller never heard. The playbook, the
+    event log and the live-view subscribers are shared, not copied."""
+    memo = {id(session.events): session.events, id(session._subscribers): session._subscribers}
+    if session.run:
+        memo[id(session.run.playbook)] = session.run.playbook
+    return copy.deepcopy(session.__dict__, memo)
+
+
+def _side_effects(before: dict, session) -> bool:
+    """Did the turn do something that can't be taken back (a ticket, a safety alert, an ending)?"""
+    return bool((session.ticket and not before["ticket"]) or (session.hazard and not before["hazard"])
+                or (session.closed and not before["closed"]) or (session.end_requested and not before["end_requested"]))
 
 
 class BolnaBridge:
@@ -128,14 +145,29 @@ class BolnaBridge:
         async with call.lock:
             call.last_active = time.monotonic()
             brain = self.brain_for(self.store.get(call.session_id))
-            new = [u for u in users[call.users_seen:] if u]
+            fresh = users[call.users_seen:]
+            new = [u for u in fresh if u]
             call.users_seen = len(users)
             if not new:
                 return call.last_speech   # a re-ask without new words (silence nudge or retry)
-            if call.last_speech and self._was_cut_off(convo, call.last_speech):
-                self._mark_unheard(brain, call.presented_before_last)
-            call.presented_before_last = set(brain.s.presented)
-            result = await brain.respond(" ".join(new))
+            words = " ".join(new)
+            if call.last_speech and call.checkpoint and not self._was_heard(convo, call.last_speech, len(fresh)):
+                # Callers pause mid-sentence ("नहीं यार।" … "हाँ, सब कुछ नहीं है।"); Bolna sends each piece as a
+                # turn and drops our reply when they keep talking. That reply's step was never heard, so its
+                # piece wasn't an answer to it: undo the turn and answer the whole sentence instead.
+                session = brain.s
+                if _side_effects(call.checkpoint, session):
+                    # A ticket, alert or goodbye can't be undone: say it again so it's actually heard.
+                    session.say("user", words)
+                    session.messages.append({"role": "user", "content": words})
+                    session.publish("interrupted", repeated=True)
+                    return call.last_speech
+                session.__dict__.update(call.checkpoint)
+                session.publish("interrupted", merged=call.last_words)
+                logger.info(f"[{session.id}] reply not heard; answering the caller's pieces together")
+                words = f"{call.last_words} {words}"
+            call.checkpoint, call.last_words = checkpoint(brain.s), words
+            result = await brain.respond(words)
             call.last_speech = result.speech
             return result.speech
 
@@ -153,15 +185,6 @@ class BolnaBridge:
         if not call and not _HANGUP_CHECK.search(text):
             return ""
         return json.dumps({"hangup": "Yes" if hangup else "No"})
-
-    def stream_cancelled(self, messages: list[dict]) -> None:
-        """Bolna dropped the stream (the caller talked over the reply): the new step wasn't heard."""
-        system = next((_text(m.get("content")) for m in messages if m.get("role") == "system"), "")
-        call = self.calls.get(call_vars(system).get("call_ref") or "")
-        if call:
-            session = self.store.get(call.session_id)
-            if session:
-                self._mark_unheard(self.brain_for(session), call.presented_before_last)
 
     def _claim_pending(self) -> tuple[str | None, list[str], asyncio.Task | None]:
         """The most recent execution a webhook announced that no conversation has claimed yet."""
@@ -215,17 +238,18 @@ class BolnaBridge:
         return "anon-" + hashlib.sha1(head.encode("utf-8")).hexdigest()[:12]
 
     @staticmethod
-    def _was_cut_off(convo: list[dict], last_speech: str) -> bool:
-        """Bolna's history keeps what was actually spoken; a much shorter last reply means an interruption."""
-        last_assistant = next((_text(m.get("content")) for m in reversed(convo) if m.get("role") == "assistant"), None)
-        if last_assistant is None:
+    def _was_heard(convo: list[dict], last_speech: str, fresh_users: int) -> bool:
+        """Bolna's history keeps only what was actually spoken. Our last reply was heard if an assistant
+        message follows the caller words it answered, and it wasn't cut short."""
+        tail_users, last_assistant = 0, None
+        for m in reversed(convo):
+            if m.get("role") == "assistant":
+                last_assistant = _text(m.get("content"))
+                break
+            tail_users += m.get("role") == "user"
+        if tail_users > fresh_users:   # the caller's earlier piece has no reply after it: ours was dropped
             return False
-        return len(last_assistant) < 0.7 * len(last_speech)
-
-    @staticmethod
-    def _mark_unheard(brain, presented_before: set[str]) -> None:
-        brain.s.presented = set(presented_before)
-        brain.s.publish("interrupted")
+        return last_assistant is not None and len(last_assistant) >= 0.7 * len(last_speech)
 
     # ---- call end ------------------------------------------------------------------------
     def _call_for(self, execution_id: str, payload: dict) -> BolnaCall | None:

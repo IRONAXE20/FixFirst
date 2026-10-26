@@ -591,7 +591,8 @@ def test_model_water_flag_asks_where_the_water_is_first(env):
     ("nahi bas, thank you", True), ("नहीं, धन्यवाद", True), ("no that's all", True), ("bas itna hi", True),
     ("ok bye", True), ("theek hai shukriya", True),
     ("haan, fridge bhi kharab hai", False), ("nahi, technician kab aayega?", False), ("AC nahi chal raha", False),
-    ("ek aur problem hai", False),
+    ("ek aur problem hai", False), ("मुश्किल नहीं हो जाएगा", False), ("नहीं", True), ("no", True),
+    ("filter nikalna aasan nahi hai", False),
 ])
 def test_caller_is_done(text, done):
     assert caller_is_done(text) is done
@@ -651,5 +652,16 @@ def test_only_the_scripted_goodbyes_contain_the_hang_up_phrases():
     for key, texts in PHRASES.items():
         for text in texts.values():
             has = any(m in text.lower() for m in marks)
-            assert has == (key in ("goodbye", "safety_goodbye")), key
+            assert has == (key in ("goodbye", "safety_goodbye", "goodbye_again")), key
 
+
+def test_after_the_goodbye_more_thanks_get_a_short_goodbye_not_the_model(env):
+    # Live call: "ठीक है थैंक यू" after the goodbye went to the model, whose reply had no hang-up phrase.
+    brain, session, llm = env.make([
+        LLMResult(tool_calls=[call("escalate_to_technician", reason="caller asked", caller_requested=True, language="hi")]),
+    ])
+    run(brain.respond("mera AC kharab hai, kya karun"))
+    run(brain.respond("nahi bas, dhanyavaad"))
+    n = len(llm.requests)
+    speech = run(brain.respond("ठीक है थैंक यू")).speech
+    assert speech == brain._phrase("goodbye_again") and len(llm.requests) == n and session.end_requested

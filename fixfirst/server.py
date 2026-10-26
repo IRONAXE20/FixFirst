@@ -361,12 +361,9 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
             return completion_body(speech, model)
 
         async def stream():
-            try:
-                for piece in sse_chunks(speech, model):
-                    yield piece
-            except asyncio.CancelledError:
-                bolna.stream_cancelled(messages)
-                raise
+            # A reply Bolna drops (the caller kept talking) is noticed and undone on the next turn (bolna.py).
+            for piece in sse_chunks(speech, model):
+                yield piece
 
         return StreamingResponse(stream(), media_type="text/event-stream")
 
