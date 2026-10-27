@@ -1,0 +1,593 @@
+# AC (Lloyd / Voltas, split or window): RentBasket SOP Part A, playbooks AC-01 to AC-12.
+#
+# How playbooks work: the agent speaks each node's `say` text word for word and the LLM
+# only classifies the caller's answer into one of the node's `outcomes`. The server rejects
+# any transition that isn't listed, so the agent cannot give an instruction that isn't here.
+#
+# Node kinds: question/step (default) · resolve · escalate · followup.
+# Outcome targets: next: <node> · hazard: <kind from safety/hazards.yaml>.
+#
+# SOP rules applied throughout (section 3.2 and Part A): no ladders, stools or work at height, nothing
+# on the outdoor unit except looking at it from a safe place, no coils, fins, drain pipes, covers or
+# chemicals, no repeated breaker resets, and one normal restart at most. Escalation notes carry the SOP
+# playbook ID, its issue code and the priority (P1 = essential appliance unavailable, P2 = degraded).
+# The Hindi wording is FixFirst's translation of the SOP and still needs RentBasket's sign-off.
+id: ac_not_cooling
+appliance: ac
+title: {en: "AC problem (RentBasket SOP AC-01 to AC-12)", hi: "AC की problem (RentBasket SOP AC-01 से AC-12)"}
+status: draft-unreviewed       # set to "reviewed" once RentBasket signs off the spoken wording
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "Before we start, a quick safety check. Is there any burning or chemical smell, smoke, sparks, a shock from the AC, water near its plug or switch, or does the power switch keep tripping?"
+      hi: "शुरू करने से पहले एक छोटा safety check. क्या AC से कोई जलने की या chemical जैसी smell, धुआँ, चिंगारी, करंट, उसके plug या switch के पास पानी है, या बिजली का switch बार-बार trip हो रहा है?"
+    outcomes:
+      no_hazard: {next: triage, label: "None of these"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, smoke or sparks"}
+      hazard_shock: {hazard: electrical, label: "Shock or tingling from the AC"}
+      hazard_water: {hazard: water_electric, label: "Water near the plug, switch or wiring"}
+      hazard_breaker: {hazard: electrical, label: "The breaker or MCB keeps tripping"}
+      hazard_chemical: {hazard: stop_use, label: "Strong chemical smell (possible refrigerant leak)"}
+    sources: [rentbasket_sop]
+
+  triage:
+    say:
+      en: "Please tell me what exactly is happening with the AC."
+      hi: "बताइए, AC में exactly क्या हो रहा है?"
+    outcomes:
+      not_cooling: {next: ac01_air, label: "AC-01: Runs but not cooling"}
+      weak_airflow: {next: ac02_fan, label: "AC-02: Air comes out but very weakly"}
+      water_leak: {next: ac03_off, label: "AC-03: Water dripping from the indoor unit"}
+      ice: {next: ac04_off, label: "AC-04: Ice or frost on the indoor unit or pipes"}
+      noise: {next: ac05_kind, label: "AC-05: Unusual noise, rattling or vibration"}
+      switches_off: {next: ac06_timer, label: "AC-06: Switches off by itself or keeps restarting"}
+      not_starting: {next: ac07_remote, label: "AC-07: Doesn't turn on, remote or buttons not working"}
+      outdoor_unit: {next: ac08_mode, label: "AC-08: Outdoor unit doesn't seem to run"}
+      bad_smell: {next: ac09_kind, label: "AC-09: Bad smell from the AC"}
+      old_unit: {next: ac10_symptom, label: "AC-10: AC is old, performance poor over time"}
+      room_warm: {next: ac11_air, label: "AC-11: AC works but the room still feels warm"}
+      condensation: {next: ac12_where, label: "AC-12: More water, condensation or dampness than usual"}
+      error_code: {next: error_code, label: "An error code is shown on the AC"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-01 running but not cooling ---------------------------------------------------
+  ac01_air:
+    say:
+      en: "Is air coming out of the indoor unit?"
+      hi: "क्या indoor unit से हवा निकल रही है?"
+    outcomes:
+      air_comes: {next: ac01_mode, label: "Yes, air comes out"}
+      no_air: {next: ac02_fan, label: "No air, or hardly any"}
+    sources: [rentbasket_sop]
+
+  ac01_mode:
+    say:
+      en: "Please look at the remote's screen. Is it on Cool mode, the snowflake symbol, and not Fan, Dry or Auto, with the temperature at about 24 degrees?"
+      hi: "Remote की screen देखिए। क्या वो Cool mode, यानी snowflake वाले निशान पर है, Fan, Dry या Auto पर नहीं, और temperature लगभग 24 degree है?"
+    help:
+      en: "The snowflake is the Cool symbol. A fan symbol means it only blows air, and a water-drop symbol is Dry mode. Press the Mode button until you see the snowflake."
+      hi: "Snowflake, यानी बर्फ़ वाला निशान, Cool mode है। Fan वाला निशान मतलब सिर्फ हवा, और पानी की बूँद वाला Dry mode है। Mode button तब तक दबाइए जब तक snowflake न दिखे।"
+    outcomes:
+      was_wrong: {next: ac01_set, label: "It's on another mode or a high temperature"}
+      already_correct: {next: ac01_room, label: "Already on Cool at about 24"}
+    sources: [rentbasket_sop]
+
+  ac01_set:
+    say:
+      en: "Please press the Mode button until you see the snowflake, set 24 degrees and a medium or high fan. Then leave the settings as they are for about ten minutes. Is colder air coming out now?"
+      hi: "कृपया Mode button तब तक दबाइए जब तक snowflake न दिखे, temperature 24 degree और fan medium या high कीजिए। फिर लगभग दस मिनट settings को वैसे ही रहने दीजिए। क्या अब ठंडी हवा आ रही है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, cold air now"}
+      not_fixed: {next: ac01_room, label: "Still not cold"}
+      later: {next: followup, label: "Will check after waiting"}
+    sources: [rentbasket_sop]
+
+  ac01_room:
+    say:
+      # Asked so that a plain "yes" means all clear.
+      en: "Are all the room's doors and windows closed, and is the space in front of the AC clear, with no curtains or furniture blocking its air?"
+      hi: "क्या कमरे के सारे दरवाज़े और खिड़कियाँ बंद हैं, और AC के सामने की जगह खाली है, यानी पर्दे या furniture हवा नहीं रोक रहे?"
+    outcomes:
+      all_ok: {next: ac01_filter_reach, label: "Yes: all closed and the space in front is clear"}
+      fixed_something: {next: ac01_wait, label: "Something was open or blocking; the caller has fixed it now"}
+    sources: [rentbasket_sop]
+
+  ac01_wait:
+    say:
+      en: "Let it run for about ten minutes without changing the settings. Is it cooling better now?"
+      hi: "लगभग दस मिनट settings बदले बिना चलने दीजिए। क्या अब बेहतर ठंडा कर रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, cooling better"}
+      not_fixed: {next: ac01_filter_reach, label: "No difference"}
+      later: {next: followup, label: "Will check after waiting"}
+    sources: [rentbasket_sop]
+
+  ac01_filter_reach:
+    say:
+      en: "Dirty air filters, behind the front panel of the indoor unit, can cause this. Can you open that front panel while standing on the floor, without climbing on a stool, chair or ladder?"
+      hi: "Indoor unit के front panel के पीछे लगे गंदे air filters से ऐसा हो सकता है। क्या आप ज़मीन पर खड़े होकर, बिना stool, chair या सीढ़ी पर चढ़े, वो front panel खोल सकते हैं?"
+    outcomes:
+      can_reach: {next: ac01_filter_off, label: "Yes, reachable from the floor"}
+      cant_reach: {next: esc_ac01_filter, label: "Too high, or not comfortable doing it"}
+      recently_cleaned: {next: esc_ac01, label: "Filters were cleaned recently"}
+    sources: [rentbasket_sop]
+
+  ac01_filter_off:
+    say:
+      en: "First switch the AC off with the remote, and then at the wall switch. Tell me when it's off."
+      hi: "पहले remote से AC बंद कीजिए, और फिर wall switch से। बंद हो जाए तो बताइए।"
+    outcomes:
+      done: {next: ac01_filter_wash, label: "AC is off at the remote and the wall"}
+      cant_do: {next: esc_ac01_filter, label: "Can't do it safely"}
+    sources: [rentbasket_sop]
+
+  ac01_filter_wash:
+    say:
+      en: "Now lift the front panel, gently slide out the mesh filters and rinse them under normal tap water, not hot water. Let them dry completely before you put them back and close the panel. Tell me when they're back in."
+      hi: "अब front panel ऊपर उठाइए, जाली वाले filters धीरे से बाहर निकालिए और normal नल के पानी से धो लीजिए, गरम पानी से नहीं। वापस लगाने और panel बंद करने से पहले उन्हें पूरी तरह सूखने दीजिए। वापस लग जाएँ तो बताइए।"
+    outcomes:
+      done: {next: ac01_filter_restart, label: "Filters cleaned, dried and back in"}
+      cant_open: {next: esc_ac01_filter, label: "Panel or filters don't come out easily"}
+      later: {next: followup, label: "Filters are drying; will finish later"}
+    sources: [rentbasket_sop]
+
+  ac01_filter_restart:
+    say:
+      en: "Now switch the wall switch back on, start the AC on Cool at 24, and give it ten to fifteen minutes. Is it cooling better?"
+      hi: "अब wall switch फिर से on कीजिए, AC को Cool पर 24 degree पर चलाइए, और दस-पंद्रह मिनट दीजिए। क्या अब बेहतर ठंडा कर रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, cooling better"}
+      not_fixed: {next: esc_ac01, label: "No improvement after cleaning the filters"}
+      later: {next: followup, label: "Will check after waiting"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-02 weak airflow ------------------------------------------------------------
+  ac02_fan:
+    say:
+      en: "Please set the fan speed to medium or high on the remote, and check that the air flaps are open and nothing is blocking the air. Is the air stronger now?"
+      hi: "कृपया remote से fan speed medium या high कीजिए, और देखिए कि हवा वाले flaps खुले हैं और हवा को कुछ रोक नहीं रहा। क्या अब हवा तेज़ आ रही है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, airflow is normal now"}
+      not_fixed: {next: ac02_filter_reach, label: "Still weak"}
+    sources: [rentbasket_sop]
+
+  ac02_filter_reach:
+    say:
+      en: "Dirty air filters, behind the front panel, are a common cause of weak air. Can you open that front panel while standing on the floor, without climbing on a stool, chair or ladder?"
+      hi: "Front panel के पीछे लगे गंदे air filters कमज़ोर हवा की आम वजह होते हैं। क्या आप ज़मीन पर खड़े होकर, बिना stool, chair या सीढ़ी पर चढ़े, वो front panel खोल सकते हैं?"
+    outcomes:
+      can_reach: {next: ac02_filter_off, label: "Yes, reachable from the floor"}
+      cant_reach: {next: esc_ac02, label: "Too high, or not comfortable doing it"}
+      recently_cleaned: {next: esc_ac02, label: "Filters were cleaned recently"}
+    sources: [rentbasket_sop]
+
+  ac02_filter_off:
+    say:
+      en: "First switch the AC off with the remote, and then at the wall switch. Tell me when it's off."
+      hi: "पहले remote से AC बंद कीजिए, और फिर wall switch से। बंद हो जाए तो बताइए।"
+    outcomes:
+      done: {next: ac02_filter_wash, label: "AC is off at the remote and the wall"}
+      cant_do: {next: esc_ac02, label: "Can't do it safely"}
+    sources: [rentbasket_sop]
+
+  ac02_filter_wash:
+    say:
+      en: "Now lift the front panel, gently slide out the mesh filters and rinse them under normal tap water, not hot water. Let them dry completely before you put them back and close the panel. Tell me when they're back in."
+      hi: "अब front panel ऊपर उठाइए, जाली वाले filters धीरे से बाहर निकालिए और normal नल के पानी से धो लीजिए, गरम पानी से नहीं। वापस लगाने और panel बंद करने से पहले उन्हें पूरी तरह सूखने दीजिए। वापस लग जाएँ तो बताइए।"
+    outcomes:
+      done: {next: ac02_restart, label: "Filters cleaned, dried and back in"}
+      cant_open: {next: esc_ac02, label: "Panel or filters don't come out easily"}
+      later: {next: followup, label: "Filters are drying; will finish later"}
+    sources: [rentbasket_sop]
+
+  ac02_restart:
+    say:
+      en: "Now switch the wall switch back on and start the AC with a high fan. Is the airflow normal now?"
+      hi: "अब wall switch फिर से on कीजिए और AC को high fan पर चलाइए। क्या अब हवा normal आ रही है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, airflow is normal"}
+      not_fixed: {next: esc_ac02, label: "Still weak after cleaning the filters"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-03 water dripping from the indoor unit ----------------------------------------
+  ac03_off:
+    say:
+      en: "Please switch the AC off with the remote so it stops dripping, and if it's safe, move your things away and put a bucket or towel under the drip. Tell me when that's done."
+      hi: "कृपया remote से AC बंद कर दीजिए ताकि पानी टपकना रुके, और अगर safe हो तो अपना सामान हटा कर टपकने की जगह के नीचे बाल्टी या towel रख दीजिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: ac03_source, label: "AC off, belongings protected"}
+    sources: [rentbasket_sop]
+
+  ac03_source:
+    say:
+      en: "Is the water coming from the AC's indoor unit itself, or from a pipe joint or the wall? Please don't open the unit or pull any pipe."
+      hi: "पानी AC के indoor unit से ही आ रहा है, या किसी pipe के जोड़ या दीवार से? कृपया unit मत खोलिए और कोई pipe मत खींचिए।"
+    outcomes:
+      from_unit: {next: esc_ac03, label: "From the indoor unit"}
+      from_pipe_or_wall: {next: esc_ac03_wall, label: "From a pipe joint or the wall"}
+      not_sure: {next: esc_ac03, label: "Not sure where"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-04 ice or frost ------------------------------------------------------------
+  ac04_off:
+    say:
+      en: "Please switch the AC off with the remote and let the ice melt on its own. Don't scrape or chip it, don't heat it, and keep your things away from the dripping water. Tell me when it's off."
+      hi: "कृपया remote से AC बंद कर दीजिए और बर्फ़ को अपने आप पिघलने दीजिए। उसे खुरचिए या तोड़िए मत, गरम मत कीजिए, और टपकते पानी से अपना सामान दूर रखिए। बंद हो जाए तो बताइए।"
+    outcomes:
+      done: {next: ac04_where, label: "AC is off, ice melting"}
+    sources: [rentbasket_sop]
+
+  ac04_where:
+    say:
+      en: "Is the ice on the indoor unit in the room, or on pipes or the outdoor unit?"
+      hi: "बर्फ़ कमरे वाले indoor unit पर है, या pipes या outdoor unit पर?"
+    outcomes:
+      indoor: {next: ac04_filter_reach, label: "On the indoor unit"}
+      pipes_or_outdoor: {next: esc_ac04, label: "On pipes or the outdoor unit"}
+    sources: [rentbasket_sop]
+
+  ac04_filter_reach:
+    say:
+      en: "Once the ice has fully melted, the air filters behind the front panel can be checked. Can you open that front panel while standing on the floor, without climbing on a stool, chair or ladder?"
+      hi: "बर्फ़ पूरी तरह पिघलने के बाद front panel के पीछे के air filters देखे जा सकते हैं। क्या आप ज़मीन पर खड़े होकर, बिना stool, chair या सीढ़ी पर चढ़े, वो front panel खोल सकते हैं?"
+    outcomes:
+      can_reach: {next: ac04_filter_wash, label: "Yes, reachable from the floor"}
+      cant_reach: {next: esc_ac04, label: "Too high, or not comfortable doing it"}
+    sources: [rentbasket_sop]
+
+  ac04_filter_wash:
+    say:
+      en: "When the ice is gone, switch the AC off at the wall switch too. Lift the front panel, slide out the mesh filters, rinse them in normal tap water and let them dry completely before putting them back. I'll check with you on WhatsApp in about an hour. If the ice comes back, I'll book a technician."
+      hi: "बर्फ़ पिघल जाए तो AC को wall switch से भी बंद कीजिए। Front panel उठाइए, जाली वाले filters निकाल कर normal नल के पानी से धोइए और वापस लगाने से पहले पूरी तरह सूखने दीजिए। मैं लगभग एक घंटे में WhatsApp पर आपसे पूछूँगी। अगर बर्फ़ फिर से जमे, तो मैं technician book कर दूँगी।"
+    outcomes:
+      will_do: {next: followup_hour, label: "Will clean the filters once the ice melts"}
+      cant_do: {next: esc_ac04, label: "Can't do it safely"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-05 noise ----------------------------------------------------------------
+  ac05_kind:
+    say:
+      en: "What does the noise sound like: grinding, metal scraping or an electrical buzz, or more like a rattle, as if something is touching the unit?"
+      hi: "आवाज़ कैसी है: घिसने, metal रगड़ने या बिजली जैसी भिनभिनाहट, या खड़खड़ जैसी, मानो कोई चीज़ unit से टकरा रही हो?"
+    outcomes:
+      grinding_or_buzz: {next: esc_ac05_stop, label: "Grinding, metallic scraping or electrical buzzing"}
+      rattle: {next: ac05_touch, label: "A rattle or knocking"}
+      outdoor: {next: esc_ac05, label: "The noise comes from the outdoor unit"}
+    sources: [rentbasket_sop]
+
+  ac05_touch:
+    say:
+      en: "From where you're standing, is a curtain, a loose object or furniture touching the indoor unit? If yes, move it away. Please don't touch the fan, open covers or climb up."
+      hi: "जहाँ आप खड़े हैं वहीं से देखिए, क्या कोई पर्दा, ढीली चीज़ या furniture indoor unit को छू रहा है? अगर हाँ, तो उसे हटा दीजिए। कृपया fan को मत छुइए, कोई cover मत खोलिए और ऊपर मत चढ़िए।"
+    outcomes:
+      moved_something: {next: ac05_recheck, label: "Something was touching it; moved it away"}
+      nothing_touching: {next: esc_ac05, label: "Nothing is touching the unit"}
+    sources: [rentbasket_sop]
+
+  ac05_recheck:
+    say:
+      en: "Is the noise gone now?"
+      hi: "क्या अब आवाज़ बंद हो गई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, the noise is gone"}
+      not_fixed: {next: esc_ac05, label: "Still noisy"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-06 switches off / keeps restarting -----------------------------------------
+  ac06_timer:
+    say:
+      en: "Please look at the remote's screen. Is a timer or sleep symbol showing, like a clock or a moon?"
+      hi: "Remote की screen देखिए। क्या उस पर timer या sleep का निशान है, जैसे घड़ी या चाँद?"
+    outcomes:
+      timer_shown: {next: ac06_timer_off, label: "A timer or sleep symbol is showing"}
+      no_timer: {next: ac06_restart, label: "No timer or sleep symbol"}
+      breaker_trips: {hazard: electrical, label: "The breaker or MCB trips when it switches off"}
+    sources: [rentbasket_sop]
+
+  ac06_timer_off:
+    say:
+      en: "Please switch the timer or sleep mode off on the remote, so the symbol disappears, and start the AC on Cool. Does it keep running now?"
+      hi: "कृपया remote पर timer या sleep mode बंद कीजिए ताकि वो निशान हट जाए, और AC को Cool पर चलाइए। क्या अब ये चलता रहता है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it keeps running"}
+      not_fixed: {next: ac06_restart, label: "Still switches off"}
+      later: {next: followup, label: "Will watch it for a while"}
+    sources: [rentbasket_sop]
+
+  ac06_restart:
+    say:
+      en: "Let's try one normal restart. Switch the AC off with the remote and at the wall switch, wait three minutes, then switch it on again and start it on Cool. Tell me when it's running."
+      hi: "चलिए एक बार normal restart करते हैं। Remote से और wall switch से AC बंद कीजिए, तीन मिनट रुकिए, फिर on करके Cool पर चलाइए। चलने लगे तो बताइए।"
+    outcomes:
+      running: {next: followup, label: "Restarted and running"}
+      stopped_again: {next: esc_ac06, label: "It switched off again soon after"}
+      breaker_trips: {hazard: electrical, label: "The breaker or MCB tripped"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-07 doesn't turn on / remote or controls -----------------------------------
+  ac07_remote:
+    say:
+      en: "Please point the remote at the AC and press ON. Does the remote's own screen show anything?"
+      hi: "Remote को AC की तरफ करके ON दबाइए। क्या remote की अपनी screen पर कुछ दिख रहा है?"
+    outcomes:
+      started: {next: resolved, label: "The AC started now"}
+      remote_blank: {next: ac07_batteries, label: "Remote screen is blank"}
+      remote_ok: {next: ac07_power, label: "Remote screen works but the AC doesn't respond"}
+    sources: [rentbasket_sop]
+
+  ac07_batteries:
+    say:
+      en: "The remote's batteries may be dead. If you have spare ones, please put in two new batteries of the same size, matching the plus and minus marks, and press ON again. Did the AC start?"
+      hi: "शायद remote की batteries खत्म हो गई हैं। अगर आपके पास हैं, तो उसी size की दो नई batteries plus और minus का निशान मिलाकर डालिए, और फिर से ON दबाइए। क्या AC चालू हुआ?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: ac07_power, label: "New batteries, still no response"}
+      no_batteries: {next: ac07_power, label: "No spare batteries right now"}
+    sources: [rentbasket_sop]
+
+  ac07_power:
+    say:
+      en: "Please check that the wall switch for the AC is on. Just the switch: please don't open any switchboard or touch any wires. Is it on?"
+      hi: "कृपया देखिए कि AC का wall switch on है। सिर्फ़ switch देखिए: कोई switchboard मत खोलिए और किसी तार को मत छुइए। क्या वो on है?"
+    outcomes:
+      was_off: {next: ac07_retry, label: "It was off, now switched on"}
+      already_on: {next: ac07_house_power, label: "It was already on"}
+    sources: [rentbasket_sop]
+
+  ac07_retry:
+    say:
+      en: "Now press ON on the remote. Did the AC start?"
+      hi: "अब remote पर ON दबाइए। क्या AC चालू हुआ?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it started"}
+      not_fixed: {next: ac07_house_power, label: "Still no response"}
+    sources: [rentbasket_sop]
+
+  ac07_house_power:
+    say:
+      en: "Is the rest of the house on normal power right now, or running on an inverter or backup during a power cut?"
+      hi: "क्या अभी घर में बाकी सब normal बिजली पर चल रहा है, या power cut की वजह से inverter या backup पर?"
+    outcomes:
+      on_backup: {next: resolved_power_cut, label: "Power cut, house is on inverter or backup"}
+      normal_power: {next: ac07_lock, label: "Normal power is on"}
+    sources: [rentbasket_sop]
+
+  ac07_lock:
+    say:
+      en: "Last question: do you see a lock symbol, like a small padlock, on the remote's screen?"
+      hi: "आखिरी सवाल: क्या remote की screen पर lock का निशान, यानी छोटा सा ताला, दिख रहा है?"
+    outcomes:
+      lock_shown: {next: esc_ac07_lock, label: "A lock symbol is showing"}
+      no_lock: {next: esc_ac07, label: "No lock symbol"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-08 outdoor unit doesn't seem to run ----------------------------------------
+  ac08_mode:
+    say:
+      en: "Please check the remote: is it on Cool mode, the snowflake symbol, with the temperature lower than the room, like 24 degrees? If not, please set it that way."
+      hi: "Remote देखिए: क्या वो Cool mode, यानी snowflake वाले निशान पर है, और temperature कमरे से कम, जैसे 24 degree है? अगर नहीं, तो ऐसे ही set कर दीजिए।"
+    outcomes:
+      done: {next: ac08_wait, label: "On Cool at about 24 (set now or already)"}
+    sources: [rentbasket_sop]
+
+  ac08_wait:
+    say:
+      en: "Some ACs wait a few minutes before the outdoor unit starts. Please wait about five minutes. Then, only if you can see the outdoor unit safely from a balcony or window, without climbing, tell me: is its fan turning? Please don't touch it."
+      hi: "कुछ AC में outdoor unit चालू होने में कुछ मिनट लगते हैं। लगभग पाँच मिनट रुकिए। फिर, सिर्फ़ अगर आप balcony या खिड़की से बिना चढ़े outdoor unit safely देख सकते हैं, तो बताइए: क्या उसका fan घूम रहा है? उसे छुइए मत।"
+    outcomes:
+      running: {next: ac08_cooling, label: "The outdoor fan is turning"}
+      not_running: {next: esc_ac08, label: "The outdoor unit still isn't running"}
+      cant_see: {next: esc_ac08, label: "Can't see the outdoor unit safely"}
+      later: {next: followup, label: "Will check after waiting"}
+    sources: [rentbasket_sop]
+
+  ac08_cooling:
+    say:
+      en: "Is cool air coming from the indoor unit now?"
+      hi: "क्या अब indoor unit से ठंडी हवा आ रही है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, cool air"}
+      not_fixed: {next: esc_ac01, label: "Outdoor unit runs but no cool air"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-09 bad smell -------------------------------------------------------------
+  ac09_kind:
+    say:
+      en: "What kind of smell is it: burning, smoky or chemical, or more musty, damp or dusty?"
+      hi: "Smell कैसी है: जलने जैसी, धुएँ जैसी या chemical जैसी, या सीलन, नमी या धूल जैसी?"
+    outcomes:
+      burning: {hazard: electrical, label: "Burning or smoky smell"}
+      chemical: {hazard: stop_use, label: "Strong chemical smell"}
+      musty: {next: ac09_filter_reach, label: "Musty, damp or dusty smell"}
+    sources: [rentbasket_sop]
+
+  ac09_filter_reach:
+    say:
+      en: "A musty smell often comes from dirty air filters behind the front panel. Can you open that front panel while standing on the floor, without climbing on a stool, chair or ladder?"
+      hi: "सीलन जैसी smell अक्सर front panel के पीछे के गंदे air filters से आती है। क्या आप ज़मीन पर खड़े होकर, बिना stool, chair या सीढ़ी पर चढ़े, वो front panel खोल सकते हैं?"
+    outcomes:
+      can_reach: {next: ac09_filter_wash, label: "Yes, reachable from the floor"}
+      cant_reach: {next: esc_ac09, label: "Too high, or not comfortable doing it"}
+    sources: [rentbasket_sop]
+
+  ac09_filter_wash:
+    say:
+      en: "Please switch the AC off with the remote and at the wall switch. Then lift the front panel, slide out the mesh filters, rinse them in normal tap water and let them dry completely before putting them back. Please don't spray perfume or any cleaner into the AC. I'll check with you on WhatsApp in about an hour."
+      hi: "कृपया remote से और wall switch से AC बंद कीजिए। फिर front panel उठाइए, जाली वाले filters निकाल कर normal नल के पानी से धोइए और वापस लगाने से पहले पूरी तरह सूखने दीजिए। AC के अंदर कोई perfume या cleaner spray मत कीजिए। मैं लगभग एक घंटे में WhatsApp पर आपसे पूछूँगी।"
+    outcomes:
+      will_do: {next: followup_hour, label: "Will clean the filters"}
+      cant_do: {next: esc_ac09, label: "Can't do it safely"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-10 old AC / poor performance over time -------------------------------------
+  ac10_symptom:
+    say:
+      en: "I understand. What exactly do you notice: weak cooling, weak air, water dripping, a noise, or a smell?"
+      hi: "मैं समझ सकती हूँ। आपको exactly क्या दिक्कत दिख रही है: ठंडक कम है, हवा कम है, पानी टपकता है, आवाज़ आती है, या smell आती है?"
+    outcomes:
+      weak_cooling: {next: ac01_air, label: "Weak cooling"}
+      weak_air: {next: ac02_fan, label: "Weak airflow"}
+      water: {next: ac03_off, label: "Water dripping"}
+      noise: {next: ac05_kind, label: "Noise"}
+      smell: {next: ac09_kind, label: "Smell"}
+      only_age: {next: esc_ac10, label: "No specific fault; concerned about age or repeated problems"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-11 AC works but the room stays warm -----------------------------------------
+  ac11_air:
+    say:
+      en: "Please hold your hand in front of the AC. Is the air coming out cold?"
+      hi: "AC के सामने हाथ रखिए। क्या निकलने वाली हवा ठंडी है?"
+    outcomes:
+      air_cold: {next: ac11_room, label: "Yes, the air itself is cold"}
+      air_not_cold: {next: ac01_mode, label: "The air isn't cold"}
+    sources: [rentbasket_sop]
+
+  ac11_room:
+    say:
+      en: "Are all the doors and windows closed, curtains drawn against strong sun, and the space in front of the AC clear?"
+      hi: "क्या सारे दरवाज़े और खिड़कियाँ बंद हैं, तेज़ धूप के आगे पर्दे लगे हैं, और AC के सामने की जगह खाली है?"
+    outcomes:
+      all_ok: {next: ac01_filter_reach, label: "Yes, all closed and clear"}
+      fixed_something: {next: ac01_wait, label: "Something was open or blocking; fixed now"}
+    sources: [rentbasket_sop]
+
+  # ---- AC-12 more water or dampness ---------------------------------------------------
+  ac12_where:
+    say:
+      en: "Is the water dripping inside the room, or only coming out of the AC's drain pipe outside the house?"
+      hi: "पानी कमरे के अंदर टपक रहा है, या सिर्फ़ घर के बाहर AC के drain pipe से निकल रहा है?"
+    outcomes:
+      outside_only: {next: resolved_condensate, label: "Only from the drain pipe outside"}
+      inside: {next: ac03_off, label: "Dripping inside the room"}
+      damp_wall: {next: esc_ac12, label: "The wall is damp, or the source is unclear"}
+    sources: [rentbasket_sop]
+
+  # ---- error code: captured for the technician, never interpreted -------------------
+  error_code:
+    say:
+      en: "What does the AC's display show? Please read the letters and numbers to me, and tell me the brand written on the unit."
+      hi: "AC की display पर क्या दिख रहा है? अक्षर और नंबर मुझे पढ़कर बताइए, और unit पर लिखा brand भी बताइए।"
+    outcomes:
+      code_given: {next: esc_error_code, label: "Caller read out the code"}
+      no_code: {next: triage, label: "No code visible after all"}
+    sources: [rentbasket_sop]
+
+  # ---- endings -----------------------------------------------------------------------
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "Great, the AC seems to be working normally again. I've noted what fixed it. Please contact us if the same problem comes back."
+      hi: "बहुत बढ़िया, AC फिर से normal चल रहा लगता है। मैंने note कर लिया है कि किस step से ठीक हुआ। अगर यही problem फिर आए, तो हमें बता दीजिए।"
+  resolved_power_cut:
+    kind: resolve
+    resolution: no_fault_power_cut
+    say:
+      en: "Then the AC itself is probably fine. Most home inverters can't run an AC, so it should start once the main power is back. If it still doesn't start after that, just call us again."
+      hi: "तो शायद AC में कोई खराबी नहीं है। ज़्यादातर घर के inverter AC नहीं चला पाते, इसलिए main बिजली वापस आने पर ये चल जाना चाहिए। अगर उसके बाद भी चालू न हो, तो हमें फिर से call कर लीजिए।"
+  resolved_condensate:
+    kind: resolve
+    resolution: no_fault
+    say:
+      en: "Water coming out of the drain pipe outside is normal; that's how the AC removes moisture from the room. If water ever drips inside the room, please call us."
+      hi: "बाहर drain pipe से पानी निकलना normal है; AC इसी तरह कमरे की नमी बाहर निकालता है। अगर कभी कमरे के अंदर पानी टपके, तो हमें call कीजिए।"
+  followup:
+    kind: followup
+    followup_minutes: 30
+    say:
+      en: "No problem, take your time. I'll message you on WhatsApp in about 30 minutes. If it still isn't right, just reply and I'll book a technician."
+      hi: "कोई बात नहीं, आराम से कीजिए। मैं लगभग 30 मिनट में आपको WhatsApp पर message करूँगी। अगर तब भी ठीक न हो, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  followup_hour:
+    kind: followup
+    followup_minutes: 60
+    say:
+      en: "Thank you. I'll message you on WhatsApp in about an hour. If it still isn't right, just reply and I'll book a technician."
+      hi: "धन्यवाद। मैं लगभग एक घंटे में आपको WhatsApp पर message करूँगी। अगर तब भी ठीक न हो, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+
+  esc_ac01:
+    kind: escalate
+    likely_cause: "AC-01 AC_NO_COOLING (P1): not cooling after mode, room and filter checks"
+    technician_note: "Record indoor airflow, whether the outdoor unit starts, error code, icing and gas/service history. Don't diagnose low refrigerant from 'not cooling' alone. Refrigerant work only by a qualified, equipped technician (Pankaj, Manoj or another approved partner; not Digamber)."
+  esc_ac01_filter:
+    kind: escalate
+    likely_cause: "AC-01 AC_NO_COOLING (P1): not cooling; filters not cleaned (caller couldn't reach them safely)"
+    technician_note: "Clean filters first, then re-check cooling. Same refrigerant rule as AC-01."
+  esc_ac02:
+    kind: escalate
+    likely_cause: "AC-02 AC_WEAK_AIRFLOW (P2): airflow weak at high fan after vent and filter checks"
+    technician_note: "Check filters, blower and coil for icing. Customer not asked to clean coils or remove panels."
+  esc_ac03:
+    kind: escalate
+    say:
+      en: "Please keep the AC off until our technician checks it, and if it's safe, take a photo of where the water comes from."
+      hi: "कृपया technician के check करने तक AC बंद ही रखिए, और अगर safe हो तो जहाँ से पानी आ रहा है उसकी photo ले लीजिए।"
+    likely_cause: "AC-03 AC_WATER_LEAK_INDOOR (P2): water dripping from the indoor unit"
+    technician_note: "Record leak location and quantity, cooling, visible ice, recent installation or shift, and whether the drain outlet is reachable from ground level. Customer not asked to touch drain pipes."
+  esc_ac03_wall:
+    kind: escalate
+    say:
+      en: "Please keep the AC off until our technician checks it, and if it's safe, take a photo of where the water comes from."
+      hi: "कृपया technician के check करने तक AC बंद ही रखिए, और अगर safe हो तो जहाँ से पानी आ रहा है उसकी photo ले लीजिए।"
+    likely_cause: "AC-03 AC_WATER_LEAK_INDOOR (P2): water from a pipe joint or the wall"
+    technician_note: "Inspect drain line and installation; record leak location."
+  esc_ac04:
+    kind: escalate
+    say:
+      en: "Please keep the AC off until our technician checks it, and keep things away from the dripping water."
+      hi: "कृपया technician के check करने तक AC बंद रखिए, और टपकते पानी से सामान दूर रखिए।"
+    likely_cause: "AC-04 AC_ICE_OR_FROST (P2): ice on the indoor unit, pipes or outdoor unit"
+    technician_note: "Possible restricted airflow, sensor/control fault or refrigerant issue: diagnose on site; never assume gas charging is the fix."
+  esc_ac05:
+    kind: escalate
+    likely_cause: "AC-05 AC_NOISE_VIBRATION (P2): noise persists, or comes from the outdoor unit"
+    technician_note: "Inspect fan, mounting and outdoor unit. Customer not asked to touch the fan or tighten mounts."
+  esc_ac05_stop:
+    kind: escalate
+    say:
+      en: "For safety, please switch the AC off and don't use it until our technician has checked it."
+      hi: "Safety के लिए, कृपया AC बंद कर दीजिए और technician के check करने तक इसे मत चलाइए।"
+    likely_cause: "AC-05 AC_NOISE_VIBRATION (P1): grinding, metallic or electrical noise; customer told to stop use"
+    technician_note: "Check fan, motor and electrical parts before restarting."
+  esc_ac06:
+    kind: escalate
+    likely_cause: "AC-06 AC_AUTO_SHUTDOWN (P2): switches off again after timer check and one restart"
+    technician_note: "Check error history, sensors, power supply and abnormal heat. Customer told not to keep resetting."
+  esc_ac07:
+    kind: escalate
+    likely_cause: "AC-07 AC_REMOTE_CONTROL (P1): AC doesn't respond with wall switch on and normal power"
+    technician_note: "Check supply, remote receiver and control board. Customer not asked to open switchboards."
+  esc_ac07_lock:
+    kind: escalate
+    likely_cause: "AC-07 AC_REMOTE_CONTROL (P2): lock symbol on the remote, AC doesn't respond"
+    technician_note: "Child/control lock likely: the team can share this model's unlock steps from its manual, or the technician can unlock on site."
+  esc_ac08:
+    kind: escalate
+    likely_cause: "AC-08 AC_OUTDOOR_UNIT_NOT_RUNNING (P1): outdoor unit not running (or not visible) on Cool after the start delay"
+    technician_note: "Check outdoor unit, capacitor/fan motor and error codes. Customer only observed from a safe place."
+  esc_ac09:
+    kind: escalate
+    likely_cause: "AC-09 AC_BAD_ODOR (P3): musty smell; filters not cleaned or smell persists"
+    technician_note: "Clean filters and drain tray; check for leakage or icing. No chemicals sprayed by the customer."
+  esc_ac10:
+    kind: escalate
+    say:
+      en: "I'll ask our team to review this AC's service history and condition."
+      hi: "मैं हमारी team से इस AC की service history और condition review करवाती हूँ।"
+    likely_cause: "AC-10 AC_OLD_OR_REPEAT_FAULT (P3): customer concerned about age or repeated faults"
+    technician_note: "Supervisor review: age/model, repair cost, repeat tickets, condition and replacement stock. Age alone is not a reason to replace; record the repair-versus-replace reason."
+  esc_ac12:
+    kind: escalate
+    say:
+      en: "If it's safe, please take a photo of the damp area. Please keep the AC off if water reaches anything electrical."
+      hi: "अगर safe हो तो गीली जगह की photo ले लीजिए। अगर पानी किसी बिजली की चीज़ तक पहुँचे, तो AC बंद ही रखिए।"
+    likely_cause: "AC-12 AC_EXCESS_CONDENSATION (P2): new dampness or unclear water source"
+    technician_note: "Check drain flow and installation; record leak location."
+  esc_error_code:
+    kind: escalate
+    likely_cause: "AC error code shown on the display (see code; not interpreted on the call)"
+    technician_note: "Look up the code in this model's manual before the visit; never infer it from another model or brand."
+    sources: [rentbasket_sop]

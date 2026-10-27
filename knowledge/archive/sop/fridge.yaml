@@ -1,0 +1,553 @@
+# Refrigerator (Whirlpool / Lloyd, direct-cool or frost-free): RentBasket SOP Part B, FR-01 to FR-13.
+#
+# SOP rules applied throughout: never move, tilt or pull the fridge out, no long unplugged defrost,
+# nothing pushed into drain holes, no chipping ice, no sharp or hot tools, no removing panels, light
+# covers or bulbs, no glue or heat on the door seal. Escalation notes carry the SOP playbook ID, its
+# issue code and the priority (P1 = not keeping food cold, P2 = degraded, P3 = minor).
+# The Hindi wording is FixFirst's translation of the SOP and still needs RentBasket's sign-off.
+id: fridge_not_cooling
+appliance: fridge
+title: {en: "Fridge problem (RentBasket SOP FR-01 to FR-13)", hi: "Fridge की problem (RentBasket SOP FR-01 से FR-13)"}
+status: draft-unreviewed
+reviewed_by: null
+entry: safety_check
+triage_node: triage
+nodes:
+  safety_check:
+    say:
+      en: "Before we start, a quick safety check. Is there any burning or strong chemical smell, smoke, sparks, a shock from the fridge, or water near its plug or socket?"
+      hi: "शुरू करने से पहले एक छोटा safety check. क्या fridge से कोई जलने की या तेज़ chemical जैसी smell, धुआँ, चिंगारी, करंट, या उसके plug या socket के पास पानी है?"
+    outcomes:
+      no_hazard: {next: triage, label: "None of these"}
+      hazard_burning: {hazard: electrical, label: "Burning smell, smoke or sparks"}
+      hazard_shock: {hazard: electrical, label: "Shock or tingling from the fridge"}
+      hazard_water: {hazard: water_electric, label: "Water near the plug, socket or wiring"}
+      hazard_chemical: {hazard: stop_use, label: "Strong chemical smell (possible refrigerant leak)"}
+    sources: [rentbasket_sop]
+
+  triage:
+    say:
+      en: "Please tell me what exactly is happening with the fridge."
+      hi: "बताइए, fridge में exactly क्या हो रहा है?"
+    outcomes:
+      not_cooling: {next: fr01_power, label: "FR-01: Fridge not cooling"}
+      fridge_warm_freezer_cold: {next: fr02_vents, label: "FR-02: Freezer is cold but the fridge section is warm"}
+      water_inside: {next: fr03_spill, label: "FR-03: Water collecting inside the fridge"}
+      water_leak: {next: fr04_protect, label: "FR-04: Water leaking onto the floor"}
+      excess_frost: {next: fr05_clarify, label: "FR-05: Too much ice or frost in the freezer"}
+      exterior_warm: {next: fr06_where, label: "FR-06: Sides or outside of the fridge feel hot"}
+      bad_smell: {next: fr07_kind, label: "FR-07: Bad smell inside"}
+      noise: {next: fr08_kind, label: "FR-08: Loud noise, rattling, buzzing or clicking"}
+      food_freezing: {next: fr09_setting, label: "FR-09: Food freezing in the fridge section"}
+      door_seal: {next: fr10_block, label: "FR-10: Door not closing or not sealing"}
+      runs_continuously: {next: fr11_cooling, label: "FR-11: Seems to run all the time"}
+      light_display: {next: fr12_cooling, label: "FR-12: Inside light or display not working"}
+      not_starting: {next: fr13_plug, label: "FR-13: Fridge completely off, doesn't start"}
+      error_code: {next: error_code, label: "An error code is shown on the fridge"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-01 not cooling ---------------------------------------------------------------
+  fr01_power:
+    say:
+      en: "When you open the door, does the light inside come on, or is the display on?"
+      hi: "Door खोलने पर क्या अंदर की light जलती है, या display on है?"
+    outcomes:
+      power_on: {next: fr01_setting, label: "Yes, light or display is on"}
+      power_off: {next: fr13_plug, label: "No light, no display"}
+    sources: [rentbasket_sop]
+
+  fr01_setting:
+    say:
+      en: "Please look at the temperature knob or display inside. Has it been turned to Off, or to the least-cold setting?"
+      hi: "अंदर का temperature knob या display देखिए। क्या वो Off पर, या सबसे कम ठंडक वाली setting पर घूमा हुआ है?"
+    outcomes:
+      was_off_or_low: {next: fr01_set_middle, label: "It was on Off or the least-cold setting"}
+      setting_normal: {next: fr01_door, label: "It's on a normal setting"}
+    sources: [rentbasket_sop]
+
+  fr01_set_middle:
+    say:
+      en: "Please turn it to the middle setting. Tell me when it's done."
+      hi: "कृपया उसे बीच वाली setting पर कर दीजिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: fr01_door, label: "Set to the middle"}
+    sources: [rentbasket_sop]
+
+  fr01_door:
+    say:
+      en: "Please close the door and check that it shuts fully, with no food packet, bottle or tray holding it open. Is it closing properly?"
+      hi: "कृपया door बंद कीजिए और देखिए कि वो पूरी तरह बंद हो, कोई packet, bottle या tray उसे खुला न रख रहा हो। क्या ये ठीक से बंद हो रहा है?"
+    outcomes:
+      closes: {next: fr01_vents, label: "Closes properly (or now does, after moving something)"}
+      wont_close: {next: fr10_gasket, label: "Doesn't close or seal properly"}
+    sources: [rentbasket_sop]
+
+  fr01_vents:
+    say:
+      en: "Inside, at the back or top, there are small air openings. Please move any food that's pressed against them. Please don't remove any cover. Tell me when done."
+      hi: "अंदर पीछे या ऊपर की तरफ हवा के छोटे-छोटे छेद होते हैं। उनसे सटा हुआ खाना थोड़ा हटा दीजिए। कोई cover मत निकालिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: fr01_recent, label: "Food moved away from the air openings"}
+    sources: [rentbasket_sop]
+
+  fr01_recent:
+    say:
+      en: "In the last day, was the fridge newly installed, moved, filled with a lot of groceries, or left open for a while?"
+      hi: "पिछले एक दिन में क्या fridge नया लगा, उसकी जगह बदली, उसमें बहुत सारा सामान भरा गया, या वो काफ़ी देर खुला रहा?"
+    outcomes:
+      recent_change: {next: followup_recover, label: "Yes, recently installed, moved, loaded or left open"}
+      no_change: {next: esc_fr01, label: "No recent change"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-02 freezer cold, fridge warm ------------------------------------------------
+  fr02_vents:
+    say:
+      en: "Please move food away from the air openings inside the fridge section, and make sure no container stops the door from closing. Please don't remove any panel. Tell me when done."
+      hi: "कृपया fridge वाले हिस्से में हवा के छेदों से खाना हटा दीजिए, और देखिए कि कोई डिब्बा door को बंद होने से न रोके। कोई panel मत निकालिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: fr02_gasket, label: "Food moved, door clear"}
+    sources: [rentbasket_sop]
+
+  fr02_gasket:
+    say:
+      en: "Now look at the rubber seal around the door. If there's food or dirt on it, wipe it gently with a soft damp cloth and then dry it. Tell me when done."
+      hi: "अब door के चारों तरफ की rubber seal देखिए। अगर उस पर खाना या गंदगी है, तो नरम गीले कपड़े से धीरे से पोंछ कर सुखा दीजिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: fr02_frost, label: "Seal checked and wiped"}
+    sources: [rentbasket_sop]
+
+  fr02_frost:
+    say:
+      en: "Is there a thick layer of frost or ice anywhere inside? If so, please don't chip or scrape it."
+      hi: "क्या अंदर कहीं बर्फ़ या frost की मोटी परत है? अगर है, तो उसे तोड़िए या खुरचिए मत।"
+    outcomes:
+      heavy_frost: {next: esc_fr02, label: "Yes, heavy frost or ice"}
+      no_frost: {next: followup_recover, label: "No heavy frost"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-03 water inside -------------------------------------------------------------
+  fr03_spill:
+    say:
+      en: "Please take out the food near the water and wipe it dry. Did the water come from a spilled drink or a leaking container?"
+      hi: "कृपया पानी के पास का खाना निकाल कर उसे पोंछ कर सुखा दीजिए। क्या ये पानी किसी गिरे हुए drink या leak होते डिब्बे से आया था?"
+    outcomes:
+      was_spill: {next: resolved_spill, label: "Yes, it was a spill or a leaking container"}
+      not_spill: {next: fr03_drain, label: "No spill; the source is unclear"}
+    sources: [rentbasket_sop]
+
+  fr03_drain:
+    say:
+      en: "Please make sure no food is touching or covering the small drain hole or the air openings at the back wall. Please don't push anything into the drain hole. Tell me when done."
+      hi: "देखिए कि पीछे की दीवार पर बने छोटे drain छेद या हवा के छेदों को कोई खाना छू या ढक न रहा हो। Drain के छेद में कुछ भी मत डालिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: fr03_door, label: "Drain hole and openings are clear"}
+      ice_or_blocked: {next: esc_fr03, label: "There's ice there, or the hole looks blocked"}
+    sources: [rentbasket_sop]
+
+  fr03_door:
+    say:
+      en: "Now check that the door closes fully and nothing is pressing on the rubber seal. Is it closing properly?"
+      hi: "अब देखिए कि door पूरी तरह बंद होता है और rubber seal पर कुछ दबाव नहीं डाल रहा। क्या ये ठीक से बंद हो रहा है?"
+    outcomes:
+      closes: {next: followup_water, label: "Closes properly"}
+      wont_close: {next: fr10_gasket, label: "Doesn't close or seal properly"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-04 water on the floor -------------------------------------------------------
+  fr04_protect:
+    say:
+      en: "If it's safe, please wipe up the water and move nearby things, but please don't move, tilt or pull out the fridge. Tell me when done."
+      hi: "अगर safe हो, तो पानी पोंछ दीजिए और पास का सामान हटा दीजिए, पर fridge को हिलाइए, झुकाइए या बाहर मत खींचिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: fr04_source, label: "Water wiped, things moved"}
+    sources: [rentbasket_sop]
+
+  fr04_source:
+    say:
+      en: "Could the water be from something spilled inside the fridge, or from the door not being fully closed?"
+      hi: "क्या ये पानी fridge के अंदर कुछ गिरने से, या door पूरी तरह बंद न होने से आया हो सकता है?"
+    outcomes:
+      spill: {next: resolved_spill, label: "Yes, a spill inside"}
+      door_open: {next: fr03_door, label: "The door may not have been closed"}
+      unknown: {next: esc_fr04, label: "Neither; the source is unclear"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-05 excessive frost --------------------------------------------------------
+  fr05_clarify:
+    say:
+      en: "Just to understand: is a thick layer of unwanted ice building up in the freezer, or is food in the fridge section freezing?"
+      hi: "बस समझने के लिए: क्या freezer में बर्फ़ की मोटी परत जम रही है, या fridge वाले हिस्से का खाना जम रहा है?"
+    outcomes:
+      thick_ice: {next: fr05_door, label: "Thick ice building up in the freezer"}
+      food_freezing: {next: fr09_setting, label: "Food in the fridge section is freezing"}
+    sources: [rentbasket_sop]
+
+  fr05_door:
+    say:
+      en: "Please check that the freezer door closes completely, with no food packet in the way. Is it closing fully?"
+      hi: "कृपया देखिए कि freezer का door पूरी तरह बंद होता है, बीच में कोई packet न हो। क्या ये पूरा बंद हो रहा है?"
+    outcomes:
+      closes: {next: fr05_gasket, label: "Closes fully (or now does)"}
+      wont_close: {next: esc_fr10, label: "Doesn't close or seal"}
+    sources: [rentbasket_sop]
+
+  fr05_gasket:
+    say:
+      en: "Please wipe the freezer door's rubber seal with a soft damp cloth and dry it. Please don't chip the ice, or use a knife, hair dryer, heater or hot water on it. Tell me when done."
+      hi: "कृपया freezer door की rubber seal को नरम गीले कपड़े से पोंछ कर सुखा दीजिए। बर्फ़ को तोड़िए मत, और उस पर चाकू, hair dryer, heater या गरम पानी का इस्तेमाल मत कीजिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: esc_fr05, label: "Seal wiped"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-06 sides feel warm --------------------------------------------------------
+  fr06_where:
+    say:
+      en: "Is it only the outer sides or back of the fridge that feel warm, or is the food inside warm too?"
+      hi: "क्या सिर्फ़ fridge की बाहरी sides या पीछे का हिस्सा गरम लग रहा है, या अंदर का खाना भी गरम है?"
+    outcomes:
+      outside_only: {next: fr06_gap, label: "Only the outside feels warm; inside is cold"}
+      inside_warm: {next: fr01_power, label: "Food inside is warm too"}
+      very_hot_smell: {hazard: stop_use, label: "Unusually hot with a smell or noise"}
+    sources: [rentbasket_sop]
+
+  fr06_gap:
+    say:
+      en: "Some warmth on the outer sides is normal; that's how a fridge gives out heat. Is there a little gap between the fridge and the wall or cabinet, so air can move? Please don't move the fridge to check."
+      hi: "बाहरी sides का थोड़ा गरम होना normal है; fridge इसी तरह गर्मी बाहर निकालता है। क्या fridge और दीवार या cabinet के बीच थोड़ी जगह है, ताकि हवा चल सके? देखने के लिए fridge को मत हिलाइए।"
+    outcomes:
+      has_gap: {next: resolved_normal, label: "Yes, there's a gap"}
+      pressed_against: {next: esc_fr06, label: "It's pressed against the wall or cabinet"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-07 smell ----------------------------------------------------------------
+  fr07_kind:
+    say:
+      en: "Is the smell from food, or is it a burning, chemical or electrical kind of smell?"
+      hi: "Smell खाने की है, या जलने, chemical या बिजली जैसी smell है?"
+    outcomes:
+      food: {next: fr07_clean, label: "Food or spill smell"}
+      burning: {hazard: electrical, label: "Burning or electrical smell"}
+      chemical: {hazard: stop_use, label: "Chemical smell"}
+    sources: [rentbasket_sop]
+
+  fr07_clean:
+    say:
+      en: "Please throw away any spoiled food, clean the removable shelves and drawers with mild soap and water, and dry them before putting them back. Tell me when done, or if you'll do it later."
+      hi: "कृपया खराब खाना फेंक दीजिए, निकलने वाली shelves और drawers को हल्के साबुन-पानी से साफ़ कीजिए, और वापस लगाने से पहले सुखा लीजिए। हो जाए तो बताइए, या बाद में करेंगे तो वो भी बताइए।"
+    outcomes:
+      done: {next: fr07_check, label: "Cleaned and dried"}
+      later: {next: followup_day, label: "Will clean it later"}
+    sources: [rentbasket_sop]
+
+  fr07_check:
+    say:
+      en: "Please keep strong-smelling food in closed containers. Is the smell gone now?"
+      hi: "तेज़ smell वाला खाना बंद डिब्बों में रखिए। क्या अब smell चली गई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, the smell is gone"}
+      not_fixed: {next: esc_fr07, label: "Still smells"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-08 noise ----------------------------------------------------------------
+  fr08_kind:
+    say:
+      en: "What does the noise sound like: a light hum, a rattle, repeated clicking, or grinding?"
+      hi: "आवाज़ कैसी है: हल्की भनभनाहट, खड़खड़, बार-बार click की आवाज़, या घिसने जैसी?"
+    outcomes:
+      hum_or_rattle: {next: fr08_touch, label: "A hum, vibration or rattle"}
+      clicking_or_grinding: {next: esc_fr08, label: "Repeated clicking or grinding"}
+    sources: [rentbasket_sop]
+
+  fr08_touch:
+    say:
+      en: "Without pulling the fridge out, check from the front: is it touching the wall or a cabinet, or is something loose on top of it rattling? If something on top is loose, take it off."
+      hi: "Fridge को बाहर खींचे बिना, सामने से देखिए: क्या वो दीवार या cabinet से सटा है, या उसके ऊपर रखी कोई ढीली चीज़ खड़खड़ा रही है? ऊपर कोई ढीली चीज़ है तो उसे हटा दीजिए।"
+    outcomes:
+      removed_item: {next: fr08_recheck, label: "Something loose on top; removed it"}
+      touching_wall: {next: esc_fr08, label: "It's touching the wall or a cabinet"}
+      nothing_found: {next: esc_fr08, label: "Nothing touching or loose"}
+    sources: [rentbasket_sop]
+
+  fr08_recheck:
+    say:
+      en: "Has the noise stopped now?"
+      hi: "क्या अब आवाज़ बंद हो गई?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, quiet now"}
+      not_fixed: {next: esc_fr08, label: "Still noisy"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-09 food freezing in the fridge section -------------------------------------
+  fr09_setting:
+    say:
+      en: "Is the temperature knob or setting turned to the coldest setting?"
+      hi: "क्या temperature knob या setting सबसे ज़्यादा ठंडक वाली setting पर है?"
+    outcomes:
+      coldest: {next: fr09_adjust, label: "Yes, on the coldest setting"}
+      normal: {next: fr09_move, label: "No, it's on a normal setting"}
+    sources: [rentbasket_sop]
+
+  fr09_adjust:
+    say:
+      en: "Please turn it to the middle setting. Tell me when it's done."
+      hi: "कृपया उसे बीच वाली setting पर कर दीजिए। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: fr09_move, label: "Set to the middle"}
+    sources: [rentbasket_sop]
+
+  fr09_move:
+    say:
+      en: "Please move food away from the back wall and the air openings, so nothing sits right against them. Tell me when done."
+      hi: "कृपया खाने को पीछे की दीवार और हवा के छेदों से थोड़ा दूर रख दीजिए, ताकि कुछ भी उनसे सटा न रहे। हो जाए तो बताइए।"
+    outcomes:
+      done: {next: followup_recover, label: "Food moved away"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-10 door / seal -----------------------------------------------------------
+  fr10_block:
+    say:
+      en: "Please rearrange any food, bottle or drawer that's sticking out, so nothing stops the door. Then close it gently. Does it close properly now?"
+      hi: "कृपया बाहर निकला हुआ खाना, bottle या drawer ठीक से रख दीजिए ताकि कुछ भी door को न रोके। फिर door धीरे से बंद कीजिए। क्या अब ये ठीक से बंद हो रहा है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it closes properly now"}
+      not_fixed: {next: fr10_gasket, label: "Still doesn't close or seal"}
+    sources: [rentbasket_sop]
+
+  fr10_gasket:
+    say:
+      en: "Please look at the rubber seal around the door. Is it torn, loose or hanging anywhere, or is the door sagging?"
+      hi: "कृपया door के चारों तरफ की rubber seal देखिए। क्या वो कहीं से फटी, ढीली या लटकी हुई है, या door नीचे झुक गया है?"
+    outcomes:
+      damaged: {next: esc_fr10, label: "Seal torn or loose, or the door sags"}
+      looks_ok: {next: fr10_wipe, label: "Seal looks fine"}
+    sources: [rentbasket_sop]
+
+  fr10_wipe:
+    say:
+      en: "Please wipe the rubber seal with a soft damp cloth, dry it, and close the door gently. Please don't use glue, heat or tools on it. Does it sit flat and seal now?"
+      hi: "कृपया rubber seal को नरम गीले कपड़े से पोंछिए, सुखाइए, और door धीरे से बंद कीजिए। उस पर glue, गर्मी या कोई औज़ार मत लगाइए। क्या अब ये ठीक से चिपक कर बंद होता है?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it seals now"}
+      not_fixed: {next: esc_fr10, label: "Still doesn't seal"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-11 runs all the time ------------------------------------------------------
+  fr11_cooling:
+    say:
+      en: "Is the fridge cooling properly inside?"
+      hi: "क्या fridge अंदर से ठीक से ठंडा कर रहा है?"
+    outcomes:
+      cooling_ok: {next: fr11_recent, label: "Yes, it's cold inside"}
+      not_cooling: {next: fr01_setting, label: "No, it's not cold enough"}
+    sources: [rentbasket_sop]
+
+  fr11_recent:
+    say:
+      en: "Was it recently installed, moved, filled with a lot of groceries, or left open for a while?"
+      hi: "क्या हाल ही में ये नया लगा, जगह बदली, बहुत सामान भरा गया, या काफ़ी देर खुला रहा?"
+    outcomes:
+      recent_change: {next: followup_recover, label: "Yes, a recent change"}
+      no_change: {next: fr11_door, label: "No recent change"}
+    sources: [rentbasket_sop]
+
+  fr11_door:
+    say:
+      en: "Does the door close fully, with nothing in the way, and is there a little gap between the fridge and the wall?"
+      hi: "क्या door पूरा बंद होता है, बीच में कुछ नहीं आता, और fridge और दीवार के बीच थोड़ी जगह है?"
+    outcomes:
+      all_ok: {next: esc_fr11, label: "Door closes and there's a gap"}
+      door_problem: {next: fr10_block, label: "The door doesn't close fully"}
+      pressed_against: {next: esc_fr11, label: "It's pressed against the wall"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-12 light or display -------------------------------------------------------
+  fr12_cooling:
+    say:
+      en: "Is the fridge still cooling normally, with only the light or display not working?"
+      hi: "क्या fridge अभी भी normal ठंडा कर रहा है, सिर्फ़ light या display काम नहीं कर रहा?"
+    outcomes:
+      only_light: {next: fr12_door, label: "Still cooling; only the light or display is off"}
+      fully_off: {next: fr13_plug, label: "The whole fridge seems off"}
+    sources: [rentbasket_sop]
+
+  fr12_door:
+    say:
+      en: "Please close the door and open it once again. Did the light come on?"
+      hi: "कृपया door बंद करके एक बार फिर खोलिए। क्या light जली?"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, the light came on"}
+      not_fixed: {next: esc_fr12, label: "Still no light or display"}
+    sources: [rentbasket_sop]
+
+  # ---- FR-13 doesn't start / display off ---------------------------------------------
+  fr13_plug:
+    say:
+      en: "With dry hands, please check that the fridge's plug is pushed fully into the socket and its switch is on. If the plug or cable looks wet or damaged, don't touch it. Was it loose or off?"
+      hi: "सूखे हाथों से देखिए कि fridge का plug socket में पूरा लगा है और उसका switch on है। अगर plug या तार गीला या खराब दिखे, तो उसे मत छुइए। क्या वो ढीला था या switch off था?"
+    help:
+      en: "If the fridge is plugged into a stabilizer, check that the stabilizer's switch and light are on too."
+      hi: "अगर fridge किसी stabilizer से जुड़ा है, तो देखिए कि stabilizer का switch और उसकी light भी on हो।"
+    outcomes:
+      was_loose_or_off: {next: fr13_retry, label: "It was loose or switched off; fixed now"}
+      already_ok: {next: fr13_house_power, label: "Plugged in and switched on already"}
+      damaged: {hazard: stop_use, label: "The plug, cable or socket looks damaged"}
+    sources: [rentbasket_sop]
+
+  fr13_retry:
+    say:
+      en: "Has the fridge started now? The light inside should come on, and you may hear it begin to run within a few minutes."
+      hi: "क्या fridge अब चालू हुआ? अंदर की light जलनी चाहिए, और कुछ मिनटों में इसके चलने की आवाज़ आ सकती है।"
+    outcomes:
+      fixed: {next: resolved, label: "Yes, it's running"}
+      not_fixed: {next: fr13_house_power, label: "Still off"}
+    sources: [rentbasket_sop]
+
+  fr13_house_power:
+    say:
+      en: "Is there normal power in the house right now, with lights and fans working?"
+      hi: "क्या अभी घर में normal बिजली है, lights और fans चल रहे हैं?"
+    outcomes:
+      power_cut: {next: resolved_power_cut, label: "No, there's a power cut"}
+      normal_power: {next: fr13_socket, label: "Yes, normal power"}
+      breaker_trips: {hazard: electrical, label: "The breaker or MCB keeps tripping"}
+    sources: [rentbasket_sop]
+
+  fr13_socket:
+    say:
+      en: "If it's easy and safe, plug a small appliance you know works, like a phone charger, into the same socket. Does that work?"
+      hi: "अगर आसान और safe हो, तो कोई छोटा appliance जो ठीक चलता हो, जैसे phone charger, उसी socket में लगा कर देखिए। क्या वो चलता है?"
+    outcomes:
+      socket_works: {next: esc_fr13, label: "The socket works; the fridge stays off"}
+      socket_dead: {next: esc_fr13_socket, label: "The socket doesn't work either"}
+      skip: {next: esc_fr13, label: "Can't test it"}
+    sources: [rentbasket_sop]
+
+  # ---- error code: captured for the technician, never interpreted -------------------
+  error_code:
+    say:
+      en: "What does the fridge's display show? Please read the letters and numbers to me, and tell me the brand written on it."
+      hi: "Fridge की display पर क्या दिख रहा है? अक्षर और नंबर मुझे पढ़कर बताइए, और उस पर लिखा brand भी बताइए।"
+    outcomes:
+      code_given: {next: esc_error_code, label: "Caller read out the code"}
+      no_code: {next: triage, label: "No code visible after all"}
+    sources: [rentbasket_sop]
+
+  # ---- endings -----------------------------------------------------------------------
+  resolved:
+    kind: resolve
+    resolution: fixed_on_call
+    say:
+      en: "Great, the fridge seems to be working normally again. I've noted what fixed it. Please contact us if the same problem comes back."
+      hi: "बहुत बढ़िया, fridge फिर से normal चल रहा लगता है। मैंने note कर लिया है कि किस step से ठीक हुआ। अगर यही problem फिर आए, तो हमें बता दीजिए।"
+  resolved_spill:
+    kind: resolve
+    resolution: no_fault
+    say:
+      en: "Then it was just the spill, and the fridge itself is fine. If water collects again without a spill, please call us."
+      hi: "तो ये बस गिरा हुआ पानी था, fridge में कोई खराबी नहीं है। अगर बिना कुछ गिरे फिर से पानी जमा हो, तो हमें call कीजिए।"
+  resolved_normal:
+    kind: resolve
+    resolution: no_fault
+    say:
+      en: "Then the fridge is working normally; warm outer sides are expected. If the food inside ever gets warm, or the sides get very hot with a smell, please call us."
+      hi: "तो fridge normal चल रहा है; बाहरी sides का गरम होना आम बात है। अगर कभी अंदर का खाना गरम हो, या sides बहुत गरम होकर smell आए, तो हमें call कीजिए।"
+  resolved_power_cut:
+    kind: resolve
+    resolution: no_fault_power_cut
+    say:
+      en: "Then the fridge should start once the power is back. Keep the door closed meanwhile so it stays cold. If it doesn't start after the power returns, just call us again."
+      hi: "तो बिजली वापस आते ही fridge चल जाना चाहिए। तब तक door बंद रखिए ताकि ठंडक बनी रहे। अगर बिजली आने के बाद भी चालू न हो, तो हमें फिर से call कर लीजिए।"
+  followup_recover:
+    kind: followup
+    followup_minutes: 180
+    say:
+      en: "Please keep the door closed as much as you can for the next few hours so it can cool down. I'll message you on WhatsApp in about three hours. If it still isn't right, just reply and I'll book a technician."
+      hi: "अगले कुछ घंटे door जितना हो सके बंद रखिए ताकि ये ठंडा हो सके। मैं लगभग तीन घंटे में WhatsApp पर message करूँगी। अगर तब भी ठीक न हो, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  followup_water:
+    kind: followup
+    followup_minutes: 240
+    say:
+      en: "Thank you. I'll message you on WhatsApp in a few hours. If water collects again, just reply and I'll book a technician."
+      hi: "धन्यवाद। मैं कुछ घंटों में WhatsApp पर message करूँगी। अगर फिर से पानी जमा हो, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+  followup_day:
+    kind: followup
+    followup_minutes: 1440
+    say:
+      en: "No problem. I'll message you on WhatsApp tomorrow. If the smell is still there after cleaning, just reply and I'll book a technician."
+      hi: "कोई बात नहीं। मैं कल WhatsApp पर message करूँगी। अगर साफ़ करने के बाद भी smell रहे, तो बस reply कर दीजिए, मैं technician book कर दूँगी।"
+
+  esc_fr01:
+    kind: escalate
+    say:
+      en: "If food has been warm for a long time, please follow food-safety guidance, and don't rely on smell alone to decide if it's safe."
+      hi: "अगर खाना काफ़ी देर से गरम है, तो food-safety का ध्यान रखिए, और सिर्फ़ smell से तय मत कीजिए कि खाना ठीक है या नहीं।"
+    likely_cause: "FR-01 FRIDGE_NO_COOLING (P1): not cooling with power on, normal setting, door closing and vents clear"
+    technician_note: "Check both compartments, clicking/abnormal sound, error code. Sealed-system or gas work only by a qualified, equipped technician (Pankaj, Manoj or another approved partner; not Digamber)."
+  esc_fr02:
+    kind: escalate
+    likely_cause: "FR-02 FRIDGE_FREEZER_COLD_FRIDGE_WARM (P2): fridge section warm with heavy frost"
+    technician_note: "Check internal fan, defrost system and airflow. Customer told not to chip the ice."
+  esc_fr03:
+    kind: escalate
+    likely_cause: "FR-03 FRIDGE_WATER_INSIDE (P2): water collecting inside; drain hole iced or blocked"
+    technician_note: "Clear the drain on site. Customer told not to push anything into the drain."
+  esc_fr04:
+    kind: escalate
+    say:
+      en: "Please keep the floor dry and away from the plug, and don't move the fridge."
+      hi: "कृपया फ़र्श सूखा रखिए, plug से पानी दूर रखिए, और fridge को मत हिलाइए।"
+    likely_cause: "FR-04 FRIDGE_WATER_ON_FLOOR (P2): water on the floor, source not an obvious spill"
+    technician_note: "Inspect drain, tray and connections. Customer not asked to pull out or tilt the fridge."
+  esc_fr05:
+    kind: escalate
+    say:
+      en: "Until the technician comes, please keep the freezer door closed as much as you can and don't put hot food inside."
+      hi: "Technician आने तक freezer का door जितना हो सके बंद रखिए और अंदर गरम खाना मत रखिए।"
+    likely_cause: "FR-05 FRIDGE_EXCESS_FROST (P2): thick frost building up in the freezer"
+    technician_note: "Check door seal, defrost system (frost-free models) and cooling. Customer not asked to do an unplugged defrost (not approved)."
+  esc_fr06:
+    kind: escalate
+    likely_cause: "FR-06 FRIDGE_EXTERIOR_WARM (P3): fridge pressed against a wall or cabinet with no ventilation gap"
+    technician_note: "Reposition with trained help to the model's ventilation clearance; customer told not to move it."
+  esc_fr07:
+    kind: escalate
+    likely_cause: "FR-07 FRIDGE_BAD_ODOR (P3): smell persists after cleaning"
+    technician_note: "Check drain, rear/motor area and cooling."
+  esc_fr08:
+    kind: escalate
+    likely_cause: "FR-08 FRIDGE_NOISE (P2): loud, clicking or grinding noise, or touching the wall"
+    technician_note: "Check fan, compressor and position. Customer not asked to pull the fridge out."
+  esc_fr10:
+    kind: escalate
+    likely_cause: "FR-10 FRIDGE_DOOR_SEAL (P2): door not sealing; gasket torn, loose or door sagging"
+    technician_note: "Inspect gasket and hinge; carry a gasket for this model if possible."
+  esc_fr11:
+    kind: escalate
+    likely_cause: "FR-11 FRIDGE_CONTINUOUS_RUNNING (P2): runs continuously with no recent change"
+    technician_note: "Check thermostat/control, door seal, ventilation clearance and compressor."
+  esc_fr12:
+    kind: escalate
+    say:
+      en: "Please don't remove the light cover; the technician will check it."
+      hi: "कृपया light का cover मत निकालिए; technician इसे check करेंगे।"
+    likely_cause: "FR-12 FRIDGE_LIGHT_DISPLAY (P3): inside light or display not working, fridge cooling"
+    technician_note: "Check light/display; replace only with RentBasket approval."
+  esc_fr13:
+    kind: escalate
+    say:
+      en: "Please keep the door closed so the food stays cold as long as possible."
+      hi: "कृपया door बंद रखिए ताकि खाना जितनी देर हो सके ठंडा रहे।"
+    likely_cause: "FR-13 FRIDGE_NO_POWER (P1): fridge doesn't start with power available"
+    technician_note: "Check cord, plug, stabilizer and the fridge's power circuit."
+  esc_fr13_socket:
+    kind: escalate
+    say:
+      en: "That socket may not have power. Please don't use a damaged extension cord in the meantime, and keep the fridge door closed."
+      hi: "उस socket में शायद बिजली नहीं आ रही। तब तक कोई खराब extension cord मत लगाइए, और fridge का door बंद रखिए।"
+    likely_cause: "FR-13 FRIDGE_NO_POWER (P1): the wall socket itself seems dead"
+    technician_note: "Household socket or wiring may be the cause: check the outlet before the fridge."
+  esc_error_code:
+    kind: escalate
+    likely_cause: "Fridge error code shown on the display (see code; not interpreted on the call)"
+    technician_note: "Look up the code in this model's manual before the visit; never infer it from another model or brand."
+    sources: [rentbasket_sop]

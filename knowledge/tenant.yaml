@@ -16,11 +16,11 @@ team_whatsapp: []
 on_call_name: "Service desk (set a named on-call owner)"
 urgent_callback_minutes: 15
 
-# What the agent may promise for a normal technician visit. RentBasket SOP section 7: never promise
-# a visit or replacement time until dispatch confirms it, so this names no day or time.
+# What the agent may promise for a normal ticket: the RentBasket KB's own ticket reply. It names no day
+# or time; never promise one until dispatch confirms it.
 normal_visit_promise:
-  en: "Our service team will call you to fix a visit time."
-  hi: "हमारी service team आपको visit का time fix करने के लिए call करेगी।"
+  en: "Our technician will contact you soon."
+  hi: "हमारे technician जल्दी आपसे contact करेंगे।"
 
 emergency_numbers:
   national: "112"            # police / fire / ambulance

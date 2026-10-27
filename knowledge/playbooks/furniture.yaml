@@ -1,0 +1,47 @@
+# Furniture (sofa, bed, dining table): RentBasket Service Knowledge Base v1, SF-01/02, BD-01/02, DT-01.
+# Every issue is a ticket.
+id: furniture_problem
+appliance: furniture
+title: {en: "Furniture problem (RentBasket KB SF, BD, DT)", hi: "Furniture की problem (RentBasket KB SF, BD, DT)"}
+status: draft-unreviewed
+reviewed_by: null
+entry: triage
+triage_node: triage
+nodes:
+  triage:
+    say:
+      en: "Please tell me which item it is, and what's wrong with it."
+      hi: "बताइए, कौन सा सामान है, और उसमें क्या problem है?"
+    outcomes:
+      sofa_broken: {next: esc_sf01, label: "SF-01 Sofa frame or legs broken or loose (sofa ka pair toot gaya, sofa hil raha hai, frame broken)"}
+      sofa_dirty: {next: esc_sf02, label: "SF-02 Sofa dirty or stained (sofa ganda hai, daag lag gaya, stain)"}
+      bed_loose: {next: esc_bd01, label: "BD-01 Bed screws or joints loose (bed hil raha hai, screws dheele hain, joint loose)"}
+      bed_noise: {next: esc_bd02, label: "BD-02 Bed makes noise while in use (bed se awaaz aati hai, creaking, chu-chu awaaz)"}
+      table_loose: {next: esc_dt01, label: "DT-01 Dining table or chair legs loose or broken (table hil rahi hai, kursi ka pair toota, leg loose)"}
+      other: {next: esc_other, label: "Something else not listed here"}
+    sources: [rentbasket_kb]
+
+  esc_sf01:
+    kind: escalate
+    likely_cause: "SF-01 Sofa frame or legs broken or loose (RentBasket KB: ticket)"
+    technician_note: "Carpenter visit; carry fasteners. Check whether it's wear or damage."
+  esc_sf02:
+    kind: escalate
+    likely_cause: "SF-02 Sofa dirty or stained (RentBasket KB: ticket)"
+    technician_note: "Cleaning visit."
+  esc_bd01:
+    kind: escalate
+    likely_cause: "BD-01 Bed screws or joints loose (RentBasket KB: ticket)"
+    technician_note: "Carpenter visit; tighten joints, carry screws."
+  esc_bd02:
+    kind: escalate
+    likely_cause: "BD-02 Bed makes noise while in use (RentBasket KB: ticket)"
+    technician_note: "Carpenter visit; check joints and slats."
+  esc_dt01:
+    kind: escalate
+    likely_cause: "DT-01 Dining table or chair legs loose or broken (RentBasket KB: ticket)"
+    technician_note: "Carpenter visit; carry fasteners."
+  esc_other:
+    kind: escalate
+    likely_cause: "Furniture issue not in the RentBasket KB (see the caller's words)"
+    technician_note: "Call the customer to understand the problem before the visit."

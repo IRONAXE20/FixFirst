@@ -46,10 +46,12 @@ _STRONG_DENIAL = re.compile(r"^\W*(no|nope|nahi|nahin|nai|na|नहीं|ना
                             r"all (fine|normal|good)|sab (theek|thik|normal)|bilkul normal|कुछ नहीं|ऐसा कुछ नहीं")
 # Words a caller would use when something really is dangerous; an LLM-only hazard flag without
 # any of them gets one safety question first instead of the emergency script.
-_DANGER_WORD = re.compile(r"(smell|spark|chingar|dhu|smoke|burn|jalne|jala|jali|current|shock|jhatk|tingl|gas|aag|fire|flame|"
+_DANGER_WORD = re.compile(r"(spark|chingar|dhu|smoke|burn|jalne|jala|jali|current|shock|jhatk|tingl|gas|aag|fire|flame|"
                           r"leak|paani|pani|water|wet|geela|battery|batri|hurt|behosh|unconscious|melt|pighal|"
                           r"trip|toot|tut|broke|damag|chemical|"
-                          r"स्मेल|गंध|बदबू|चिंगार|धुआ|स्मोक|करंट|शॉक|झटक|गैस|आग|जलने|पानी|लीक|बैटरी|बेहोश|गीला|ट्रिप|टूट)")
+                          r"चिंगार|धुआ|स्मोक|करंट|शॉक|झटक|गैस|आग|जलने|पानी|लीक|बैटरी|बेहोश|गीला|ट्रिप|टूट)")
+# "bye" mid-playbook: the caller is leaving before the fix is done (eval F03 looped on "okay, bye").
+_BYE = re.compile(r"\b(bye|goodbye|alvida|tata)\b|बाय|अलविदा")
 _SWITCHGEAR = re.compile(r"switch|स्विच|\bmcb\b|main board|meter|मीटर")
 _HAZARD_WORD_STRICT = re.compile(r"(smell|spark|chingar|dhu|smoke|burn|jalne|leak|current|shock|tingl|गंध|स्मेल|चिंगार|धुआ|करंट)")
 
@@ -229,17 +231,17 @@ def _is_safety_question(node: Node) -> bool:
 PHRASES = {
     "greeting": {
         "hi": "नमस्ते{name}! मैं {agent}, {company} की FixFirst assistant। ये call आपकी service request में मदद के लिए record हो सकती है। "
-              "ज़्यादातर problems हम कुछ ही मिनटों में phone पर ठीक कर देते हैं, और आप कभी भी 'technician' बोलेंगे तो मैं तुरंत technician book कर दूँगी। "
-              "बताइए, किस appliance में problem है?",
+              "आप कभी भी 'technician' बोलेंगे तो मैं तुरंत ticket raise कर दूँगी। "
+              "बताइए, किस appliance या सामान में problem है?",
         "en": "Hi{name}! I'm {agent}, {company}'s FixFirst assistant. This call may be recorded to help with your service request. "
-              "Most problems can be fixed over the phone in a few minutes, and you can say 'technician' at any time and I'll book one right away. "
-              "Which appliance is giving you trouble?",
+              "You can say 'technician' at any time and I'll raise a ticket right away. "
+              "Which appliance or item is giving you trouble?",
     },
     "escalated": {
-        "hi": "मैंने आपके लिए technician book कर दिया है। आपका ticket number है {code}। {promise} "
-              "मैं WhatsApp पर details और photo भेजने का link भी भेज रही हूँ, ताकि technician पूरी तैयारी से आए। क्या मैं आपकी और कोई मदद कर सकती हूँ?",
-        "en": "I've booked a technician for you. Your ticket number is {code}. {promise} "
-              "I'm also sending the details on WhatsApp, with a link to share a photo so the technician comes prepared. Is there anything else I can help you with?",
+        "hi": "मैंने आपका ticket raise कर दिया है। आपका ticket number है {code}। {promise} "
+              "मैं WhatsApp पर details और photo भेजने का link भी भेज रही हूँ। क्या मैं आपकी और कोई मदद कर सकती हूँ?",
+        "en": "I have raised a ticket for this. Your ticket number is {code}. {promise} "
+              "I'm also sending the details on WhatsApp, with a link to share a photo. Is there anything else I can help you with?",
     },
     "resolved_tail": {
         "hi": "मैं कल WhatsApp पर पूछ लूँगी कि सब ठीक चल रहा है या नहीं। क्या मैं आपकी और कोई मदद कर सकती हूँ?",
@@ -257,6 +259,10 @@ PHRASES = {
     "goodbye": {
         "hi": "ठीक है! {company} को call करने के लिए धन्यवाद। आपका दिन शुभ हो!",
         "en": "Alright! Thank you for calling {company}. Have a nice day!",
+    },
+    "goodbye_later": {
+        "hi": "ठीक है, जब आप तैयार हों तो हमें फिर से call कर लीजिए। धन्यवाद, अलविदा!",
+        "en": "Alright, call us again whenever you're ready. Thank you, goodbye!",
     },
     "goodbye_again": {
         "hi": "जी, धन्यवाद। ध्यान रखिए, अलविदा!",
@@ -342,10 +348,11 @@ WHAT YOU MAY DO
 - You may chat briefly, show empathy, clarify what the caller means, and answer questions about the call.
 
 FLOW
-1. Find out which appliance has the problem. If the customer rents one of that type, use it; if several, ask which one. Then call start_troubleshooting, passing the symptom if the caller already described it.
+1. Find out which appliance or furniture item (sofa, bed, dining table) has the problem. If the customer rents one of that type, use it; if several, ask which one. Then call start_troubleshooting, passing the symptom if the caller already described it.
 2. After each step, call answer_step with the outcome that matches the caller's reply. If the reply is unclear, ask a short question with `say`; if they don't understand the step, call explain_step.
    Only answer a step after the caller has replied to it, with one exception: if CALL STATE shows a step that hasn't been read to the caller yet, and the caller's own words earlier in this call already answer that exact step (for example they said "abhi power cut hai, inverter pe chal raha hai" before being asked about backup power), you may answer it without asking. Then you must pass `caller_said`: the words that answer it, copied exactly from the caller's message, in the same script and spelling (don't translate, transliterate or paraphrase). Words about a different check don't count (a wall switch being on says nothing about the MCB). If in doubt, don't skip: the step will be read to the caller. The system checks the quote, and never skips the safety question.
    For the safety question, choose the no-hazard answer only if the caller actually said there is no smell, sparks, smoke or water. Never assume it from unrelated details; if they answered something else, ask again with `say`.
+   If the caller answers the step and also asks a question ("haan kar dunga, par kya isse theek ho jayega?"), answer the step: the next step or ending answers it. That question is not a request for a technician.
    If the caller hasn't finished the step yet (they're about to do it, are still waiting, ask you to hold on, or ask whether they should wait), do NOT answer the step. Reply with `say` and only a short acknowledgement, like "ठीक है, आराम से कीजिए, हो जाए तो बताइए" or "हाँ, तीन minute रुकिए, फिर बताइए". Don't repeat the instruction; they already heard it.
 3. As soon as the caller mentions an error code, at any point (even while the safety question is pending), call record_error_code with the code exactly as heard (like "IE", "4C", "E4") and the brand if known. The system still asks the safety question first. Never explain what a code means yourself.
 4. If the caller asks for a technician or a person, can't do a step, sounds frustrated, or the problem isn't covered, call escalate_to_technician.
@@ -358,6 +365,7 @@ These are NOT hazards on their own; keep following the playbook, which covers th
 - "light/display/indicator jal raha hai" means it is ON (lit), not burning. Only "jalne ki smell", "kuch jal raha hai" or "aag" means burning.
 - "current/light nahi aa raha" (no power) or a power cut is a playbook fault, not an emergency. A breaker that trips once is a playbook answer; one that keeps tripping is a hazard.
 - "AC ki gas khatam / gas bharni hai" is refrigerant, a technician job, not a gas leak.
+- A bad smell on its own (old food, musty, "badboo") is not a hazard; the playbook asks about it. Only a burning, smoky, gas or chemical smell is.
 - A low, yellow or uneven gas-stove flame, or a burner that won't light, is a stove fault for a technician, unless the caller smells gas, hears hissing, or something caught fire.
 - Water leaking from an AC, fridge or washing machine is a playbook fault unless it is near a plug, socket, board or wires.
 
@@ -449,6 +457,14 @@ class Brain:
             self.s.messages.append({"role": "assistant", "content": speech})
             self.s.publish("goodbye")
             result = TurnResult(speech=speech, hazard=self.s.hazard)
+        elif (not self.s.closed and not self.s.ticket and not self.s.end_requested and _BYE.search(text.lower())
+              and caller_is_done(text)):
+            # The caller says bye before the fix is finished: let them go (a reconnect message follows the hang-up).
+            speech = self._phrase("goodbye_later")
+            self.s.end_requested = True
+            self.s.messages.append({"role": "assistant", "content": speech})
+            self.s.publish("goodbye", early=True)
+            result = TurnResult(speech=speech)
         elif self.s.closed and self.s.asked_anything_else and not self.s.end_requested and caller_is_done(text):
             # The problem is closed, we asked "anything else?", and the caller is done: say goodbye. On a
             # phone call the Bolna bridge then tells Bolna to hang up (see bolna.py hangup_answer).
@@ -790,8 +806,18 @@ class Brain:
         if self.s.pending_code and symptom in (None, "unknown") and "error_code" in playbook.symptoms:
             symptom = "error_code"
         self.s.run = PlaybookRun(playbook)
-        node = self.s.run.start(None if symptom == "unknown" else symptom)
+        symptom = None if symptom == "unknown" else symptom
         self.s.publish("playbook", playbook=playbook.id, title=playbook.title, rental=rental)
+        triage = playbook.node(playbook.triage_node) if playbook.entry == playbook.triage_node else None
+        if triage and symptom in triage.outcomes and triage.outcomes[symptom].hazard:
+            # The issue the caller named is itself a safety case (KB MW-01 sparking): straight to the alert.
+            self.s.run.advance(symptom)
+            speech = await self._hazard(triage.outcomes[symptom].hazard, source="playbook",
+                                        evidence=triage.outcomes[symptom].label)
+            return {"result": "hazard handled", "speak": speech, "closing": True}
+        node = self.s.run.start(symptom)
+        if node.terminal:   # an issue that is always a ticket (KB "ACTION = TICKET"): book it now
+            return await self._arrive(node)
         return {"result": f"started {playbook.id}; now at step {node.id}", "speak": self._present(node)}
 
     async def _tool_say(self, args: dict, _presented: set[str]) -> dict:

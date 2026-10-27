@@ -1,6 +1,7 @@
 # 36 call scenarios: 12 fixable by phone, 12 that must escalate, 12 safety.
-# They follow RentBasket's troubleshooting SOP (knowledge/sop): AC (Lloyd/Voltas), fridge (Whirlpool/Lloyd),
-# washing machine (Whirlpool) and microwave (Haier/Panasonic/Midea). Other appliances book a technician.
+# They follow RentBasket's Service Knowledge Base (knowledge/sop/RentBasket_Issue_KB.md): ACTION = TICKET
+# issues get a ticket at once; the KB's SELF-FIX issues (AC-04 filter, FR-04 front leak, WM-01 inlet filter,
+# MW-04 smell) are guided step by step. A fixable call passes when resolved, or when a follow-up is booked.
 #
 # - Unit tests (no API key) check the hazard screen on every turn: safety scenarios must
 #   trigger the expected hazard on their first turn, all other turns must not trigger.
@@ -13,324 +14,291 @@
 
 - id: F01
   category: fixable
-  title: AC remote batteries dead (AC-07)
+  title: AC weak airflow, dusty filters (AC-04)
   customer: C1
   style: hinglish
-  caller: "Your bedroom Voltas split AC doesn't turn on; pressing the remote does nothing. The remote's own screen is blank because its batteries are dead. You have spare batteries; once you put new ones in, the AC starts."
+  caller: "Your bedroom Voltas split AC's air comes out very weakly. The filters are dusty. You can switch it off, open the front panel, take the filters out, wash and dry them; after you put them back and switch it on, the air is strong again."
   turns:
-    - "AC on hi nahi ho raha, remote dabane pe kuch nahi hota"
-    - "nahi, aisa kuch nahi hai"
-    - "remote ki screen pe kuch nahi dikh raha, blank hai"
-    - "haan nayi batteries daal di, ab AC chal gaya"
+    - "AC mein hawa bahut kam aa rahi hai"
+    - "theek hai, remote aur switch dono se band kar diya"
+    - "haan panel khol ke filter nikal liye"
+    - "dho ke sukha diye"
+    - "laga diye aur on kiya, haan ab hawa achhi aa rahi hai"
   expect: {outcome: resolved, playbook: ac_not_cooling}
 
 - id: F02
   category: fixable
-  title: AC left in fan mode after a power cut (AC-01)
-  customer: C1
-  style: hinglish
-  caller: "The AC runs and air comes out, but it's normal, not cold, air. Since last night's power cut the remote shows the fan symbol (Fan mode). When you switch it to Cool at 24, cold air comes within a few minutes."
+  title: Window AC low air, filters cleaned (AC-04)
+  customer: C2
+  style: english
+  caller: "Your Lloyd window AC blows very little air and there's a lot of dust. You can switch it off, open the front panel, slide out the filters, wash them and let them dry. After refitting them and switching on, the airflow is normal."
   turns:
-    - "AC chal raha hai par thandi hawa nahi aa rahi"
-    - "koi jalne ki smell ya chingari nahi hai"
-    - "haan hawa to aa rahi hai"
-    - "remote pe fan ka sign dikh raha hai"
-    - "cool pe kar diya, 24 pe set hai, haan ab thandi hawa aa rahi hai"
+    - "My AC is blowing very low air, I think the filter is full of dust"
+    - "Okay, switched it off at the remote and the wall"
+    - "Panel is open, filters are out"
+    - "Washed them and they're dry now"
+    - "Put them back and switched it on, yes the air is strong now"
   expect: {outcome: resolved, playbook: ac_not_cooling}
 
 - id: F03
   category: fixable
-  title: Window AC filters dirty, reachable from the floor (AC-01)
-  customer: C2
+  title: AC filters drying, follow up later (AC-04)
+  customer: C3
   style: english
-  caller: "Your Lloyd window AC runs and blows air but cools very weakly. It's already on Cool at 24. Doors and windows are closed and nothing blocks it. The window AC is at chest height, so you can open its front panel standing on the floor. The filters are very dusty; after you wash and dry them, it cools much better."
+  caller: "Your Lloyd split AC's airflow is weak. You switch it off, take out the filters and wash them, but they'll take a while to dry, so you'd like to finish later."
   turns:
-    - "Hi, my AC is running but the cooling is very weak"
-    - "No, nothing like that"
-    - "Yes, air is coming out"
-    - "It's already on cool at 24"
-    - "Doors and windows are closed, nothing is blocking it"
-    - "Yes, it's a window AC, I can reach it from the floor"
-    - "Okay it's switched off"
-    - "I washed both filters, dried them and put them back"
-    - "Yes, it's much colder now"
+    - "The air from my AC is very weak"
+    - "Done, it's off"
+    - "I took the filters out"
+    - "I washed them but they're still wet, I'll put them back later"
   expect: {outcome: resolved, playbook: ac_not_cooling}
 
 - id: F04
   category: fixable
-  title: AC won't run on inverter backup during a power cut (AC-07)
+  title: Fridge leaking at the front, drain duct (FR-04)
   customer: C1
   style: hinglish
-  caller: "Your AC doesn't respond at all. The remote's screen works fine. The wall switch is on. There is a power cut right now and the house is running on the inverter."
+  caller: "Water is coming out from the front of your Whirlpool fridge onto the floor. The water is not near the plug. You can switch the fridge off, take the food out, keep the door open with a fan on it for 12 hours."
   turns:
-    - "AC start nahi ho raha"
-    - "nahi, aisa kuch nahi"
-    - "remote ki screen theek hai, par AC kuch respond nahi kar raha"
-    - "wall ka switch on hai"
-    - "abhi light gayi hui hai, inverter pe chal raha hai ghar"
-  expect: {outcome: resolved, playbook: ac_not_cooling}
+    - "fridge ke aage se paani aa raha hai"
+    - "plug ke paas nahi hai, bas saamne gir raha hai"
+    - "theek hai, wall se band kar diya"
+    - "khana nikal diya, darwaza khula hai"
+    - "haan fan laga dunga, 12 ghante chhod dunga"
+  expect: {outcome: resolved, playbook: fridge_not_cooling}
 
 - id: F05
   category: fixable
-  title: Washer not filling, tap was closed (WM-02)
-  customer: C1
-  style: hinglish
-  caller: "Your Whirlpool top-load washing machine isn't filling with water. The other taps in the house have water. The machine's own tap was closed by mistake; after you open it, water fills normally."
+  title: Fridge front leak, English caller (FR-04)
+  customer: C2
+  style: english
+  caller: "Water drips from the front of your Lloyd fridge. It's nowhere near the plug. You're happy to switch it off, empty it and leave it open with a fan for 12 hours."
   turns:
-    - "washing machine mein paani nahi aa raha"
-    - "nahi, aisa kuch nahi hai"
-    - "haan baaki nalon mein paani aa raha hai"
-    - "are haan, machine wala tap band tha, khol diya"
-    - "haan ab paani bhar raha hai"
-  expect: {outcome: resolved, playbook: washer_problem}
+    - "Water is coming from the front of my fridge"
+    - "No, it's not near the plug"
+    - "Okay, it's off at the wall"
+    - "Food is out and the door is open"
+    - "Yes, I can leave it with a fan for 12 hours"
+  expect: {outcome: resolved, playbook: fridge_not_cooling}
 
 - id: F06
   category: fixable
-  title: Washer not draining, drain hose kinked (WM-05)
-  customer: C2
-  style: english
-  caller: "Your Whirlpool front-load washer finished but water is still in the drum. Nothing near the plug, no smell. The drain hose behind the machine is visibly bent and easy to reach; after you straighten it and run Drain, the water drains."
+  title: Fridge water on the floor in front (FR-04)
+  customer: C1
+  style: hinglish
+  caller: "There's water on the floor in front of your fridge, coming from the front. Not near the plug. You'll follow the steps: switch off, take food out, door open, fan for 12 hours."
   turns:
-    - "My washing machine isn't draining, the water is still inside"
-    - "No, nothing like that"
-    - "Yes, the drain hose is bent behind the machine"
-    - "Okay, I straightened it"
-    - "I ran the drain program, it's draining now"
-  expect: {outcome: resolved, playbook: washer_problem}
+    - "fridge se paani neeche gir raha hai, aage ki taraf"
+    - "nahi, plug wahan se door hai"
+    - "band kar diya"
+    - "saara khana bahar rakh diya, door khula hai"
+    - "theek hai fan chala diya, kal subah on karunga"
+  expect: {outcome: resolved, playbook: fridge_not_cooling}
 
 - id: F07
   category: fixable
-  title: Washer shaking with a lopsided load (WM-07)
+  title: Washer not filling, inlet filter cleaned (WM-01)
   customer: C1
   style: hinglish
-  caller: "Your washing machine shakes and bangs during spin, but it isn't moving across the floor and there's no flooding. A heavy blanket made the load lopsided. The feet look firm on the floor. After you spread the clothes evenly it runs smoothly."
+  caller: "Your Whirlpool washing machine isn't filling with water. You can switch it off, close the tap, unscrew the inlet pipe at the back, pull out the small mesh filter and clean it. After refitting and opening the tap, water comes in normally."
   turns:
-    - "machine spin ke time bahut hil rahi hai aur awaaz kar rahi hai"
-    - "nahi, aisa kuch nahi, apni jagah pe hi hai"
-    - "ek bada blanket tha, kapde ek taraf ho gaye the, barabar kar diye"
-    - "haan chaaron pair zameen pe theek hain"
-    - "haan ab aaram se chal rahi hai"
+    - "machine mein paani nahi bhar raha"
+    - "band kar di aur nal bhi band kar diya"
+    - "haan peeche se pipe khol diya"
+    - "jaali wala filter nikal ke saaf kar diya, bahut kachra tha"
+    - "sab wapas lagaya, nal khola, haan ab paani aa raha hai"
   expect: {outcome: resolved, playbook: washer_problem}
 
 - id: F08
   category: fixable
-  title: Washer lid not fully closed (WM-08)
-  customer: C1
-  style: hinglish
-  caller: "Your washing machine won't start. The display is lit (you'd say 'display to jal raha hai'). The lid wasn't fully closed; once you close it properly and press Start, the machine starts."
+  title: Washer water not coming in, English (WM-01)
+  customer: C2
+  style: english
+  caller: "Your Whirlpool front-load washer won't take in water. You switch it off and close the tap, unscrew the inlet pipe, clean the mesh filter inside, then refit everything; water comes in now."
   turns:
-    - "washing machine start nahi ho rahi"
-    - "nahi, aisa kuch nahi hai"
-    - "display to jal raha hai"
-    - "dhakkan theek se band nahi tha, ab band karke start dabaya to chal gayi"
+    - "My washing machine isn't taking any water"
+    - "Switched it off and closed the tap"
+    - "Okay, I unscrewed the inlet pipe"
+    - "Found the little mesh filter and cleaned it"
+    - "Fitted it back and started it, water is coming in now"
   expect: {outcome: resolved, playbook: washer_problem}
 
 - id: F09
   category: fixable
-  title: Fridge stabilizer switched off (FR-13)
-  customer: C1
+  title: Washer paani nahi aa raha, filter clogged (WM-01)
+  customer: C3
   style: hinglish
-  caller: "Your single-door Whirlpool fridge is completely off and the light inside doesn't come on. It's plugged in through a stabilizer whose switch was off; after you switch it on, the fridge starts a few minutes later."
+  caller: "Water isn't coming into your washing machine because its inlet filter is clogged with dirt. You do each step: switch off, close tap, unscrew the inlet pipe, clean the dirty filter, refit and open the tap. After that, water fills normally: the problem is fixed."
   turns:
-    - "fridge band pada hai, darwaza kholne pe andar ki light bhi nahi jal rahi"
-    - "nahi, aisa kuch nahi hai"
-    - "stabilizer ka switch off tha, on kar diya"
-    - "haan teen minute baad fridge chal gaya, light bhi aa gayi"
-  expect: {outcome: resolved, playbook: fridge_not_cooling}
+    - "washing machine mein paani nahi aa raha"
+    - "ho gaya, band hai aur tap bhi"
+    - "pipe khol diya"
+    - "filter saaf kar diya"
+    - "lagaya aur chalaya, ab paani bhar raha hai"
+  expect: {outcome: resolved, playbook: washer_problem}
 
 - id: F10
   category: fixable
-  title: Fridge door held open by a bottle (FR-10)
-  customer: C2
+  title: Microwave smells of old food (MW-04)
+  customer: C3
   style: english
-  caller: "Your Lloyd fridge door doesn't close properly and keeps swinging open a little. A tall bottle in the door shelf is sticking out; once you move it, the door closes and seals."
+  caller: "Your Panasonic microwave has a bad smell, like old food, not burning. You unplug it and wipe the inside, door and turntable with a damp cloth; the smell goes away."
   turns:
-    - "My fridge door isn't closing properly"
-    - "No, nothing like that"
-    - "Oh, a big bottle was sticking out. I moved it and now the door closes fine"
-  expect: {outcome: resolved, playbook: fridge_not_cooling}
+    - "My microwave has a bad smell inside"
+    - "It smells like old food"
+    - "Okay, switched off and unplugged"
+    - "Wiped it all with a damp cloth, the smell is gone"
+  expect: {outcome: resolved, playbook: microwave_problem}
 
 - id: F11
   category: fixable
-  title: Microwave left on grill mode (MW-02)
+  title: Microwave badboo, cleaned with lemon (MW-04)
   customer: C3
-  style: english
-  caller: "Your Panasonic microwave runs but the food doesn't heat. The door clicks shut. It was set to Grill mode; after you choose Microwave mode on high, a cup of water gets warm in a minute."
+  style: hinglish
+  caller: "Your microwave smells bad, like stale food. You unplug it, wipe it inside, then heat lemon water for three minutes and wipe again; now it's fine."
   turns:
-    - "My microwave runs but the food stays cold"
-    - "No, nothing like that"
-    - "Yes, the door clicks shut"
-    - "Oh, it's on grill mode"
-    - "Okay, set it to microwave on high"
-    - "Yes, the water is warm now"
+    - "microwave mein se badboo aa rahi hai"
+    - "purane khane jaisi"
+    - "band karke plug nikal diya"
+    - "saaf kar diya, nimbu wala paani bhi garam kiya, ab badboo nahi hai"
   expect: {outcome: resolved, playbook: microwave_problem}
 
 - id: F12
   category: fixable
-  title: Microwave turntable off its slot (MW-04)
+  title: Microwave smell, will clean later (MW-04)
   customer: C3
   style: english
-  caller: "Your microwave heats food but the glass tray doesn't turn. The tray had slipped off its slot; after you take out the tray and ring, wipe underneath and refit them, it turns normally. Nothing is cracked."
+  caller: "Your microwave smells like old food. You unplug it now but you'll wipe it later in the evening."
   turns:
-    - "The glass plate in my microwave isn't turning"
-    - "No, nothing like that"
-    - "Done, I took it out, cleaned underneath and put it back properly"
-    - "Yes, it's turning now"
+    - "There's a smell coming from the microwave"
+    - "Like old food, not burning"
+    - "Done, unplugged"
+    - "I'll clean it this evening"
   expect: {outcome: resolved, playbook: microwave_problem}
 
 - id: E01
   category: escalate
-  title: AC outdoor unit not running (AC-08)
-  customer: C3
-  style: english
-  caller: "Your Lloyd split AC's indoor unit blows normal air. It's on Cool at 24. You can see the outdoor unit safely from the balcony: even after waiting five minutes its fan isn't turning at all."
+  title: AC not cooling (AC-01, ticket)
+  customer: C1
+  style: hinglish
+  caller: "Your AC runs but doesn't cool; warm air comes out. You want it fixed."
   turns:
-    - "The AC's outdoor unit doesn't seem to be running at all"
-    - "No, nothing like that"
-    - "Yes, it's on cool at 24"
-    - "I waited, I can see it from the balcony, its fan isn't moving at all"
+    - "AC thanda nahi kar raha, garam hawa aa rahi hai"
   expect: {outcome: escalated, playbook: ac_not_cooling}
 
 - id: E02
   category: escalate
-  title: Water dripping from the AC indoor unit (AC-03)
-  customer: C1
-  style: hinglish
-  caller: "Water is dripping from the AC's indoor unit down the wall. There's no water near the plug or the switch board. You switch it off and put a bucket under it. It's coming from the unit itself."
+  title: AC outdoor unit not running (AC-02, ticket)
+  customer: C3
+  style: english
+  caller: "Your Lloyd split AC's outdoor unit isn't running at all."
   turns:
-    - "AC se paani tapak raha hai andar wale unit se, deewar pe"
-    - "plug ya board ke paas paani nahi hai, bas neeche gir raha hai"
-    - "theek hai, band kar diya aur balti rakh di"
-    - "AC ke unit se hi aa raha hai"
+    - "The outdoor unit of my AC is not running"
   expect: {outcome: escalated, playbook: ac_not_cooling}
 
 - id: E03
   category: escalate
+  title: AC won't turn on, socket and wire fine (AC-03)
+  customer: C1
+  style: hinglish
+  caller: "Your AC doesn't turn on. The socket and plug look normal, not black. The wire looks fine, nothing like a short."
+  turns:
+    - "AC on hi nahi ho raha"
+    - "nahi, socket aur plug normal dikh rahe hain"
+    - "taar bhi theek hai"
+  expect: {outcome: escalated, playbook: ac_not_cooling}
+
+- id: E04
+  category: escalate
   title: AC error code on display (not interpreted)
   customer: C1
   style: hinglish
-  caller: "Your Voltas AC shows E4 on its display and switches itself off. You don't know what the code means and you'd like it fixed."
+  caller: "Your Voltas AC shows E4 on its display and switches itself off. You don't know what the code means."
   turns:
     - "AC ki screen pe E4 aa raha hai aur band ho jaata hai"
     - "Voltas ka hai"
   expect: {outcome: escalated, error_code: "E4"}
 
-- id: E04
-  category: escalate
-  title: Whirlpool washer code (WM-11, not interpreted)
-  customer: C3
-  style: english
-  caller: "Your Whirlpool washing machine shows F05 on the display and won't continue. Nothing else is unusual."
-  turns:
-    - "My washing machine is showing F05"
-    - "It's a Whirlpool"
-  expect: {outcome: escalated, error_code: "F05"}
-
 - id: E05
   category: escalate
-  title: Caller wants a technician straight away
+  title: Fridge not cooling (FR-01, ticket)
   customer: C2
   style: english
-  caller: "Your fridge isn't cooling. You're busy and want a technician sent; you don't want to do any steps yourself."
+  caller: "Your fridge isn't cooling and food is getting spoiled."
   turns:
-    - "Fridge is not cooling. Please just send a technician, I don't have time for steps."
-  expect: {outcome: escalated}
+    - "My fridge is not cooling, the food is getting spoiled"
+  expect: {outcome: escalated, playbook: fridge_not_cooling}
 
 - id: E06
   category: escalate
-  title: AC filters out of reach without climbing (AC-01)
+  title: Fridge leaking from the back (FR-05, ticket)
   customer: C1
   style: hinglish
-  caller: "Your split AC blows air but isn't cooling. It's already on Cool at 24 and the doors are closed. The indoor unit is mounted high on the wall; you can't open its panel without climbing, so you want someone sent."
+  caller: "Water comes out from the back of your fridge."
   turns:
-    - "AC thanda nahi kar raha"
-    - "nahi koi smell nahi"
-    - "haan hawa aa rahi hai"
-    - "cool mode pe hi hai, 24 pe"
-    - "haan sab band hai, saamne kuch nahi hai"
-    - "nahi, AC bahut upar laga hai, bina chadhe nahi hoga"
-  expect: {outcome: escalated, playbook: ac_not_cooling}
+    - "fridge ke peeche se paani aa raha hai"
+  expect: {outcome: escalated, playbook: fridge_not_cooling}
 
 - id: E07
   category: escalate
-  title: Fridge still warm after all checks (FR-01)
-  customer: C2
-  style: english
-  caller: "Your Lloyd double-door fridge's light is on but nothing inside is cold. The temperature setting is in the middle. The door closes fine. You moved food away from the air openings. It wasn't moved, newly loaded or left open."
+  title: Washer pipe broken (WM-02, ticket)
+  customer: C1
+  style: hinglish
+  caller: "The outlet pipe of your washing machine is broken."
   turns:
-    - "The fridge light is on but nothing inside is cold"
-    - "No, nothing unusual like that"
-    - "Yes, the light comes on"
-    - "The setting is in the middle"
-    - "The door closes properly"
-    - "Done, I moved the food away from the vents"
-    - "No, nothing changed recently"
-  expect: {outcome: escalated, playbook: fridge_not_cooling}
+    - "washing machine ka pipe toot gaya hai"
+  expect: {outcome: escalated, playbook: washer_problem}
 
 - id: E08
   category: escalate
-  title: Washer not draining, hose looks fine (WM-05)
+  title: Washer stops mid-cycle (WM-04, ticket)
   customer: C2
   style: english
-  caller: "Water stays in your front-load washer's drum after the cycle. Nothing near the plug, no smell. The drain hose looks fine and its end is in the drain."
+  caller: "Your washing machine stops in the middle of the cycle every time."
   turns:
-    - "Water stays in the drum after the wash, it won't drain"
-    - "No, nothing like that"
-    - "The drain hose looks fine, not bent"
-    - "Yes, its end is in the drain"
+    - "My washing machine stops in the middle of the cycle"
   expect: {outcome: escalated, playbook: washer_problem}
 
 - id: E09
   category: escalate
-  title: Washer drum won't turn (WM-01)
+  title: Microwave not heating (MW-02, always a ticket)
   customer: C3
-  style: english
-  caller: "Your Whirlpool washer fills with water but the drum doesn't turn. You paused it, spread the clothes out and took a few out. The lid is closed properly. On a retry the drum still doesn't turn, with no unusual noise or smell."
+  style: hinglish
+  caller: "Your microwave runs but the food stays cold."
   turns:
-    - "The washing machine fills but the drum doesn't turn at all"
-    - "No, nothing like that"
-    - "Okay, paused it, spread the clothes and took some out"
-    - "Yes, the lid is properly closed"
-    - "I started it again, still not turning"
-  expect: {outcome: escalated, playbook: washer_problem}
+    - "microwave garam nahi kar raha, khana thanda hi rehta hai"
+  expect: {outcome: escalated, playbook: microwave_problem}
 
 - id: E10
   category: escalate
-  title: Microwave water test fails (MW-02)
-  customer: C3
+  title: Purifier water tastes bad (WP-02, ticket)
+  customer: C2
   style: english
-  caller: "Your Panasonic microwave runs, the light and turntable work, but food doesn't heat. The door clicks shut. It's on Microwave mode at high power. A cup of water stays cold after a minute, with no odd noise or smell."
+  caller: "Your RO water purifier's water tastes bad and you think the TDS is high."
   turns:
-    - "My microwave runs but nothing gets hot"
-    - "No, nothing like that"
-    - "Yes, the door clicks shut"
-    - "It's on microwave mode, high power"
-    - "I tried the cup of water, it's still cold after a minute"
-  expect: {outcome: escalated, playbook: microwave_problem}
+    - "The water from my purifier tastes bad, I think the TDS is high"
+  expect: {outcome: escalated, playbook: water_purifier_problem}
 
 - id: E11
   category: escalate
-  title: Thick frost building in the freezer (FR-05)
+  title: Bed screws loose (BD-01, ticket)
   customer: C1
   style: hinglish
-  caller: "A thick layer of ice keeps building up in your fridge's freezer. The freezer door closes properly. You wipe the door seal as asked. You'd like it fixed."
+  caller: "Your rented bed wobbles; its screws feel loose."
   turns:
-    - "freezer mein bahut moti barf jam rahi hai"
-    - "nahi, aisa kuch nahi"
-    - "haan freezer mein moti barf ki parat ban rahi hai"
-    - "haan door theek se band hota hai"
-    - "theek hai, seal saaf kar di"
-  expect: {outcome: escalated, playbook: fridge_not_cooling}
+    - "bed hil raha hai, screws dheele ho gaye hain"
+  expect: {outcome: escalated, playbook: furniture_problem}
 
 - id: E12
   category: escalate
-  title: Inverter backup low (not in RentBasket's SOP)
+  title: Caller wants a technician instead of the self-fix
   customer: C2
   style: english
-  caller: "Your inverter's backup now lasts only about 40 minutes instead of 3 hours. The battery isn't swollen, hot or smelly."
+  caller: "Your washing machine isn't filling with water. You don't want to open any pipes yourself and want a technician sent."
   turns:
-    - "My inverter backup has become very low, barely 40 minutes"
-  expect: {outcome: escalated}
+    - "My washing machine isn't filling with water"
+    - "I don't want to open pipes myself, please send a technician"
+  expect: {outcome: escalated, playbook: washer_problem}
 
 - id: S01
   category: safety

@@ -161,11 +161,12 @@ def validate(pb: Playbook, source_ids: set[str]) -> list[str]:
 
 
 class PlaybookLibrary:
-    def __init__(self, root: Path | None = None):
+    def __init__(self, root: Path | None = None, playbook_dir: Path | None = None):
+        """`playbook_dir` loads another set (e.g. knowledge/archive/sop) with root's sources."""
         root = root or KNOWLEDGE_DIR
         self.sources: dict = yaml.safe_load((root / "sources.yaml").read_text(encoding="utf-8")) or {}
         self.playbooks: dict[str, Playbook] = {}
-        for path in sorted((root / "playbooks").glob("*.yaml")):
+        for path in sorted((playbook_dir or root / "playbooks").glob("*.yaml")):
             pb = _parse(yaml.safe_load(path.read_text(encoding="utf-8")))
             self.playbooks[pb.id] = pb
         self.errors = [e for pb in self.playbooks.values() for e in validate(pb, set(self.sources))]

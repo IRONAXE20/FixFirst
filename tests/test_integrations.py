@@ -323,28 +323,28 @@ def test_bolna_call_as_a_customer_is_a_test_call(phone):
 def test_bolna_reply_the_caller_never_heard_is_undone_and_their_pieces_answered_together(phone):
     # Live call 26 Oct: "नहीं यार।" then "हाँ, सब कुछ नहीं है।" arrived as two turns. Bolna dropped our reply to
     # the first piece (the caller kept talking), yet the playbook had moved on and took the second piece as
-    # the answer to a question the caller never heard.
+    # the answer to a step the caller never heard.
     from fixfirst.playbooks import get_library
     ac = get_library().for_appliance("ac")
     phone.llm.responses.extend([
-        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_cooling", language="hi")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="weak_airflow", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
     ])
     head = [{"role": "system", "content": SYSTEM}, {"role": "assistant", "content": "नमस्ते! बताइए, क्या problem है?"},
-            {"role": "user", "content": "मेरा एसी ठीक से कूल नहीं कर रहा।"}]
+            {"role": "user", "content": "AC में हवा कम आ रही है।"}]
     post = lambda msgs: _spoken(phone.post("/bolna/v1/chat/completions", headers=AUTH,
                                            json={"model": "fixfirst", "messages": msgs, "stream": True}))
-    safety = post(head)
-    assert safety == ac.node("safety_check").text("hi")
-    head.append({"role": "assistant", "content": safety})
-    assert post(head + [{"role": "user", "content": "नहीं यार।"}]) == ac.node("ac01_air").text("hi")
-    # Bolna's next request: no assistant message after "नहीं यार।", so the air question was never spoken.
-    again = post(head + [{"role": "user", "content": "नहीं यार।"}, {"role": "user", "content": "हाँ, सब कुछ नहीं है।"}])
-    assert again == ac.node("ac01_air").text("hi")
-    assert phone.llm.requests[-1]["messages"][-1]["content"] == "नहीं यार। हाँ, सब कुछ नहीं है।"
+    first = post(head)
+    assert first == ac.node("ac04_off").text("hi")
+    head.append({"role": "assistant", "content": first})
+    assert post(head + [{"role": "user", "content": "हाँ।"}]) == ac.node("ac04_filters").text("hi")
+    # Bolna's next request: no assistant message after "हाँ।", so the filters step was never spoken.
+    again = post(head + [{"role": "user", "content": "हाँ।"}, {"role": "user", "content": "बंद कर दिया।"}])
+    assert again == ac.node("ac04_filters").text("hi")
+    assert phone.llm.requests[-1]["messages"][-1]["content"] == "हाँ। बंद कर दिया।"
     path = phone.get("/api/calls").json()[0]["path"]
-    assert [p["node"] for p in path] == ["safety_check", "triage"]   # the safety question answered once
+    assert [p["node"] for p in path] == ["triage", "ac04_off"]   # the switch-off step answered once
 
 
 def test_bolna_end_call_tool_is_called_after_the_goodbye(phone):

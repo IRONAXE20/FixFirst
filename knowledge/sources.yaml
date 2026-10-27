@@ -1,5 +1,10 @@
 # Where each playbook step comes from. Steps are paraphrased (never copied) from these
 # pages; `official` marks manufacturer sources. Retrieved October 2026.
+rentbasket_kb:
+  title: RentBasket Service Knowledge Base v1 (what to do for each customer issue; takes precedence over the SOP)
+  url: knowledge/sop/RentBasket_Issue_KB.md
+  publisher: RentBasket
+  official: true
 rentbasket_sop:
   title: RentBasket Appliance Troubleshooting SOP v1.0 (25 October 2026)
   url: knowledge/sop/RentBasket_Appliance_Troubleshooting_SOP.md

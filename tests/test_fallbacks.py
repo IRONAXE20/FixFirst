@@ -24,10 +24,8 @@ def test_voice_failure_never_overrides_a_safety_ticket(env):
 def test_demo_brain_drives_a_typed_call(env):
     brain, session, _ = env.make([], language="en")
     brain.llm = KeywordLLM()
-    run(brain.respond("my AC is not cooling"))
-    assert session.run and session.run.current == "safety_check"
-    run(brain.respond("no, nothing like that"))
-    assert session.run.current == "ac01_air"
+    run(brain.respond("my AC's air is very low"))   # KB AC-04: a self-fix
+    assert session.run and session.run.current == "ac04_off"
     run(brain.respond("please just send a technician"))
     assert session.outcome == "escalated"
 

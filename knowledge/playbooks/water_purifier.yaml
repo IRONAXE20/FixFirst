@@ -1,0 +1,36 @@
+# Water purifier: RentBasket Service Knowledge Base v1, WP-01 to WP-03. Every issue is a ticket.
+id: water_purifier_problem
+appliance: water_purifier
+title: {en: "Water purifier problem (RentBasket KB WP-01 to WP-03)", hi: "Water purifier की problem (RentBasket KB WP-01 से WP-03)"}
+status: draft-unreviewed
+reviewed_by: null
+entry: triage
+triage_node: triage
+nodes:
+  triage:
+    say:
+      en: "Please tell me what's wrong with the water purifier."
+      hi: "बताइए, water purifier में क्या problem है?"
+    outcomes:
+      leak: {next: esc_wp01, label: "WP-01 Water leakage (paani leak ho raha hai, purifier se paani gir raha hai)"}
+      purification: {next: esc_wp02, label: "WP-02 Water purification issue (paani ka taste kharab, water not clean, TDS high)"}
+      not_working: {next: esc_wp03, label: "WP-03 Purifier not working properly (purifier band hai, paani nahi aa raha, not working)"}
+      other: {next: esc_other, label: "Something else not listed here"}
+    sources: [rentbasket_kb]
+
+  esc_wp01:
+    kind: escalate
+    likely_cause: "WP-01 Water leakage (RentBasket KB: ticket)"
+    technician_note: "Check fittings, tank and membrane housing."
+  esc_wp02:
+    kind: escalate
+    likely_cause: "WP-02 Water purification issue: taste, cleanliness or TDS (RentBasket KB: ticket)"
+    technician_note: "Check filters, membrane and TDS; carry a filter set."
+  esc_wp03:
+    kind: escalate
+    likely_cause: "WP-03 Purifier not working properly (RentBasket KB: ticket)"
+    technician_note: "Check power, pump and water supply."
+  esc_other:
+    kind: escalate
+    likely_cause: "Water purifier issue not in the RentBasket KB (see the caller's words)"
+    technician_note: "Call the customer to understand the problem before the visit."

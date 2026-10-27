@@ -29,8 +29,9 @@ def test_pages_and_config(client):
     cfg = client.get("/api/config").json()
     assert cfg["tenant"]["name"] == "RentBasket" and cfg["sarvam_ready"] is False
     assert len(client.get("/api/customers").json()) == 3
-    assert {p["appliance"] for p in client.get("/api/playbooks").json()} == {"ac", "washer", "fridge", "microwave"}
-    assert client.get("/api/playbooks/ac_not_cooling").json()["entry"] == "safety_check"
+    assert {p["appliance"] for p in client.get("/api/playbooks").json()} == {"ac", "washer", "fridge", "microwave",
+                                                                            "water_purifier", "furniture"}
+    assert client.get("/api/playbooks/ac_not_cooling").json()["entry"] == "triage"
     assert "gas" in client.get("/api/safety").json()
 
 
@@ -135,7 +136,7 @@ def test_playbooks_are_stored_versioned_and_validated_before_saving(admin_client
     edited = yaml.safe_dump(doc, allow_unicode=True, sort_keys=False)
     assert c.put("/api/playbooks/ac_not_cooling", json={"yaml": edited}).status_code == 401   # no admin key
     H = {"X-Admin-Key": "admin-test"}
-    broken = dict(doc, nodes={**doc["nodes"], "ac01_mode": {**doc["nodes"]["ac01_mode"], "say": {"en": "only English"}}})
+    broken = dict(doc, nodes={**doc["nodes"], "ac04_off": {**doc["nodes"]["ac04_off"], "say": {"en": "only English"}}})
     r = c.put("/api/playbooks/ac_not_cooling", json={"yaml": yaml.safe_dump(broken, allow_unicode=True)}, headers=H)
     assert r.status_code == 422 and any("say" in e for e in r.json()["errors"])   # rejected, nothing saved
     r = c.put("/api/playbooks/ac_not_cooling", json={"yaml": edited, "by": "test", "base_version": 1}, headers=H)
@@ -167,7 +168,8 @@ def test_import_retires_playbooks_that_no_longer_have_a_file(tmp_path):
     playbook_store.sync(engine, library)
     assert "tv_problem" in library.playbooks
     saved = playbook_store.import_files(engine, library)
-    assert set(saved) == {"ac_not_cooling", "fridge_not_cooling", "washer_problem", "microwave_problem"}
+    assert set(saved) == {"ac_not_cooling", "fridge_not_cooling", "washer_problem", "microwave_problem",
+                          "water_purifier_problem", "furniture_problem"}
     assert "tv_problem" not in library.playbooks
     with engine.connect() as c:
         assert "tv_problem" not in {r.id for r in c.execute(select(playbook_docs.c.id))}

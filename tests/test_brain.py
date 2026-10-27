@@ -11,13 +11,21 @@ from fixfirst.db import followups, outbox, tickets
 from fixfirst.llm import LLMError, LLMResult, call
 from fixfirst.playbooks import PlaybookLibrary, get_library
 
+from conftest import SOP
+
 
 def run(coro):
     return asyncio.run(coro)
 
 
 def ac_text(node_id, lang="hi"):
-    return get_library().for_appliance("ac").node(node_id).text(lang)
+    """A step of the archived SOP AC playbook (the engine tests' long flow)."""
+    return SOP.for_appliance("ac").node(node_id).text(lang)
+
+
+def kb_text(appliance, node_id, lang="hi"):
+    """A step of the live RentBasket KB playbook."""
+    return get_library().for_appliance(appliance).node(node_id).text(lang)
 
 
 def rows(engine, table):
@@ -45,6 +53,7 @@ def test_gas_smell_skips_the_llm_and_books_urgent_ticket(env):
 
 
 def test_full_phone_fix_flow(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
@@ -63,6 +72,7 @@ def test_full_phone_fix_flow(env):
 
 
 def test_answer_to_an_unheard_step_is_rejected(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_cooling", language="hi"),
                               call("answer_step", outcome="no_hazard", language="hi")]),
@@ -73,6 +83,7 @@ def test_answer_to_an_unheard_step_is_rejected(env):
 
 
 def test_invalid_outcome_repeats_the_step(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_cooling", language="en")]),
         LLMResult(tool_calls=[call("answer_step", outcome="made_up", language="en")]),
@@ -99,8 +110,9 @@ def test_repeated_llm_failure_falls_back_to_a_ticket(env):
 
 
 def test_washer_code_is_recorded_after_the_safety_question_and_never_interpreted(env):
+    env.library = SOP
     # RentBasket SOP WM-11: record the code exactly; don't guess its meaning from another model.
-    washer = get_library().for_appliance("washer")
+    washer = SOP.for_appliance("washer")
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="washer", rental_id="R12", symptom="error_code", language="hi")]),
         LLMResult(tool_calls=[call("record_error_code", brand="Whirlpool", code="F05", language="hi")]),
@@ -150,37 +162,64 @@ def test_appliance_without_playbook_books_technician(env):
     assert "inverter" in result.speech and session.outcome == "escalated"
 
 
-def test_microwave_water_test_follows_the_sop(env):
-    mw = get_library().for_appliance("microwave")
-    brain, session, _ = env.make([
-        LLMResult(tool_calls=[call("start_troubleshooting", appliance="microwave", rental_id="R34", symptom="no_heat", language="en")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="en")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="closes", language="en")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="microwave_mode", language="en")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="not_warm", language="en")]),
-    ], customer="C3", language="en")
-    run(brain.respond("my microwave runs but the food doesn't heat"))
-    assert run(brain.respond("no, nothing like that")).speech == mw.node("mw02_door").text("en")
-    run(brain.respond("yes it clicks shut"))
-    test = run(brain.respond("it's on microwave mode")).speech
-    assert "Never run it empty" in test
-    final = run(brain.respond("the water is still cold")).speech
-    assert final.startswith(mw.node("esc_mw02").text("en"))
-    assert session.ticket["summary"]["likely_cause"].startswith("MW-02 MW_RUNS_NO_HEAT")
+def test_kb_ticket_issue_is_booked_at_once_without_any_fix(env):
+    # RentBasket KB: AC-01 "Not cooling" is ACTION = TICKET: no steps, no fix suggested.
+    brain, session, llm = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+    ])
+    speech = run(brain.respond("AC thanda nahi kar raha")).speech
+    assert session.outcome == "escalated" and len(llm.requests) == 1
+    assert speech.startswith("मैंने आपका ticket raise कर दिया है") and speech.endswith(brain._phrase("anything_else"))
+    assert session.ticket["summary"]["likely_cause"].startswith("AC-01 Not cooling")
 
 
-def test_damaged_microwave_door_is_a_stop_use_hazard(env):
+def test_kb_ac_filter_self_fix(env):
     brain, session, _ = env.make([
-        LLMResult(tool_calls=[call("start_troubleshooting", appliance="microwave", rental_id="R34", symptom="door", language="en")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="hazard_door", language="en")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="fixed", language="hi")]),
+    ])
+    assert run(brain.respond("hawa kam aa rahi hai")).speech == kb_text("ac", "ac04_off")
+    assert run(brain.respond("band kar diya")).speech == kb_text("ac", "ac04_filters")
+    assert run(brain.respond("nikal liye")).speech == kb_text("ac", "ac04_wash")
+    assert run(brain.respond("dho ke sukha diye")).speech == kb_text("ac", "ac04_refit")
+    final = run(brain.respond("haan ab hawa theek aa rahi hai")).speech
+    assert kb_text("ac", "resolved") in final and session.outcome == "resolved"
+
+
+def test_kb_ac_burnt_socket_is_an_urgent_safety_ticket(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="power", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="burnt", language="hi")]),
+    ])
+    assert run(brain.respond("AC on nahi ho raha")).speech == kb_text("ac", "ac03_socket")
+    run(brain.respond("haan socket kaala ho gaya hai"))
+    assert session.hazard == "electrical" and session.ticket["priority"] == "urgent"
+
+
+def test_kb_microwave_sparking_and_noise_is_a_stop_use_urgent_ticket(env):
+    # KB MW-01 covers "awaaz aa rahi hai / loud noise" too, which the hazard screen alone wouldn't catch.
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="microwave", rental_id="R34", symptom="sparking_noise",
+                                   language="en")]),
     ], customer="C3", language="en")
-    run(brain.respond("the microwave door won't close"))
-    speech = run(brain.respond("yes the hinge is broken")).speech
+    speech = run(brain.respond("my microwave is making a loud noise")).speech
     assert session.hazard == "stop_use" and session.ticket["priority"] == "urgent"
     assert "stop using the appliance" in speech
 
 
+def test_kb_furniture_issue_is_a_ticket(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="furniture", symptom="bed_loose", language="hi")]),
+    ])
+    run(brain.respond("bed hil raha hai, screws dheele hain"))
+    assert session.outcome == "escalated" and session.ticket["summary"]["likely_cause"].startswith("BD-01")
+
+
 def test_long_preamble_is_dropped_in_front_of_a_script(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(content="Sure, first you should check whether the filters are clean because dust blocks air flow.",
                   tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_cooling", language="en")]),
@@ -199,6 +238,7 @@ def test_llm_can_flag_a_hazard_the_screen_missed(env):
 
 
 def test_hangup_mid_playbook_schedules_a_reconnect_message(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_cooling", language="hi")]),
     ])
@@ -235,6 +275,7 @@ def test_technician_request_detection(text, expected):
 
 
 def test_no_hazard_is_not_assumed_from_unrelated_answers(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
@@ -255,7 +296,8 @@ def test_say_tool_speaks_the_models_own_words(env):
 
 
 def test_code_heard_before_the_playbook_is_routed_after_safety(env):
-    washer = get_library().for_appliance("washer")
+    env.library = SOP
+    washer = SOP.for_appliance("washer")
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("record_error_code", code="F05", language="hi")]),
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="washer", rental_id="R12", symptom="unknown", language="hi")]),
@@ -269,6 +311,7 @@ def test_code_heard_before_the_playbook_is_routed_after_safety(env):
 
 
 def test_off_script_say_is_replaced_by_the_current_step(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("say", text="अब एक बार check कीजिए कि AC का plug ठीक से लगा है।", language="hi")]),
@@ -280,6 +323,7 @@ def test_off_script_say_is_replaced_by_the_current_step(env):
 
 
 def test_clear_denial_is_accepted_without_a_loop(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
@@ -313,6 +357,7 @@ def test_language_detection(text, lang):
 
 
 def test_roman_hinglish_gets_hindi_scripts_even_if_the_model_says_en(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_starting", language="en")]),
     ], language="en")
@@ -331,6 +376,7 @@ def _ac_to_wall_switch(first_words):
 
 
 def test_step_the_caller_already_answered_is_skipped_with_their_words(env):
+    env.library = SOP
     first, script, replies = _ac_to_wall_switch("AC start nahi ho raha. Abhi power cut hai, ghar inverter pe chal raha hai.")
     brain, session, llm = env.make([
         *script,
@@ -362,6 +408,7 @@ def test_step_the_caller_already_answered_is_skipped_with_their_words(env):
 
 
 def test_skip_the_check_disagrees_with_is_asked(env):
+    env.library = SOP
     # Seen live (on the old MCB step): "saare MCB bhi upar hain" (all up) taken as "one switch is down".
     brain, session, llm = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi")]),
@@ -381,6 +428,7 @@ def test_skip_the_check_disagrees_with_is_asked(env):
 
 
 def test_made_up_quote_is_rejected_and_the_step_is_asked(env):
+    env.library = SOP
     first, script, replies = _ac_to_wall_switch("AC start nahi ho raha, ghar mein inverter laga hai")
     brain, session, llm = env.make([
         *script,
@@ -399,6 +447,7 @@ def test_made_up_quote_is_rejected_and_the_step_is_asked(env):
 
 
 def test_real_words_about_another_step_are_not_evidence(env):
+    env.library = SOP
     # Seen live: the caller had mentioned the wall switch, but the model quoted their power-cut sentence.
     brain, session, llm = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi")]),
@@ -415,6 +464,7 @@ def test_real_words_about_another_step_are_not_evidence(env):
 
 
 def test_look_ahead_can_decline_and_the_step_is_read(env):
+    env.library = SOP
     first, script, replies = _ac_to_wall_switch("AC start nahi ho raha. Abhi power cut hai, ghar inverter pe chal raha hai.")
     brain, session, _ = env.make([
         *script,
@@ -429,6 +479,7 @@ def test_look_ahead_can_decline_and_the_step_is_read(env):
 
 
 def test_safety_question_is_never_skipped(env):
+    env.library = SOP
     brain, session, llm = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi"),
                               call("answer_step", outcome="no_hazard", caller_said="koi smell ya spark nahi hai", language="hi")]),
@@ -462,6 +513,7 @@ def test_no_look_ahead_onto_a_safety_question(env, tmp_path):
 
 
 def test_look_ahead_stops_after_two_rounds(env):
+    env.library = SOP
     brain, session, llm = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
@@ -485,6 +537,7 @@ def test_look_ahead_stops_after_two_rounds(env):
 
 
 def test_unasked_step_without_caller_words_is_rejected(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi"),
@@ -513,6 +566,7 @@ def test_find_quote(quote, said, expected):
 
 
 def test_repeating_a_heard_step_gets_a_wait_phrase_not_the_step_again(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_starting", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="no_hazard", language="hi")]),
@@ -527,6 +581,7 @@ def test_repeating_a_heard_step_gets_a_wait_phrase_not_the_step_again(env):
 
 
 def test_water_from_the_appliance_is_not_a_water_near_plug_alarm(env):
+    env.library = SOP
     # Live Bolna test: "se paani leak kar raha hai" answered the safety question and set off the water alarm.
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="water_leak", language="hi")]),
@@ -542,6 +597,7 @@ def test_water_from_the_appliance_is_not_a_water_near_plug_alarm(env):
 
 
 def test_water_near_the_plug_still_triggers(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="water_leak", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="hazard_water", language="hi")]),
@@ -575,6 +631,7 @@ def test_tools_not_offered_this_turn_are_not_run(env):
 
 
 def test_model_water_flag_asks_where_the_water_is_first(env):
+    env.library = SOP
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
         LLMResult(tool_calls=[call("flag_safety_concern", kind="water_electric", evidence="paani hai", language="hi")]),
@@ -652,7 +709,7 @@ def test_only_the_scripted_goodbyes_contain_the_hang_up_phrases():
     for key, texts in PHRASES.items():
         for text in texts.values():
             has = any(m in text.lower() for m in marks)
-            assert has == (key in ("goodbye", "safety_goodbye", "goodbye_again")), key
+            assert has == (key in ("goodbye", "safety_goodbye", "goodbye_again", "goodbye_later")), key
 
 
 def test_after_the_goodbye_more_thanks_get_a_short_goodbye_not_the_model(env):
@@ -665,3 +722,24 @@ def test_after_the_goodbye_more_thanks_get_a_short_goodbye_not_the_model(env):
     n = len(llm.requests)
     speech = run(brain.respond("ठीक है थैंक यू")).speech
     assert speech == brain._phrase("goodbye_again") and len(llm.requests) == n and session.end_requested
+
+
+def test_bye_in_the_middle_of_a_self_fix_lets_the_caller_go(env):
+    # Eval F03: the caller wanted to finish later and kept saying "okay, bye"; the agent kept chatting.
+    brain, session, llm = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="en")]),
+    ], language="en")
+    run(brain.respond("the air from my AC is very weak"))
+    n = len(llm.requests)
+    speech = run(brain.respond("Okay, I will call back later. Bye."))
+    assert speech.speech == brain._phrase("goodbye_later") and session.end_requested and len(llm.requests) == n
+
+
+def test_a_plain_smell_gets_a_safety_question_not_an_alarm(env):
+    # Eval F12: "There's a smell coming from the microwave" was flagged as a fire by the model.
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("flag_safety_concern", kind="fire", evidence="smell from the microwave", language="en")]),
+    ], customer="C3", language="en")
+    speech = run(brain.respond("There's a smell coming from the microwave")).speech
+    assert session.hazard is None and speech == brain._phrase("safety_probe")
+

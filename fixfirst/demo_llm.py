@@ -25,6 +25,7 @@ SYMPTOMS = [
     ("water_leak", r"\b(leak\w*|tapak\w*|drip\w*|dripping)\b"),
     ("not_draining", r"\b(drain\w*|paani nahi nikal|not emptying)\b"),
     ("not_filling", r"\b(not filling|paani nahi aa|no water|fill)\b"),
+    ("weak_airflow", r"\b(low air|air is (very )?low|air'?s (very )?low|weak air\w*|hawa kam)\b"),
     ("shaking", r"\b(shak\w*|hil rahi|vibrat\w*|walking)\b"),
     ("not_spinning", r"\b(spin|ghoom\w*|not rotat\w*)\b"),
     ("no_heat", r"\b(not heating|garam nahi|no heat|doesn'?t heat)\b"),
