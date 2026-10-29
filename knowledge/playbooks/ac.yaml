@@ -98,6 +98,7 @@ nodes:
     outcomes:
       fixed: {next: resolved, label: "Yes, the airflow is fine now"}
       not_fixed: {next: esc_ac04, label: "No, still weak"}
+      partly: {next: partial_ac04, label: "Better, but the airflow is still not normal"}
     sources: [rentbasket_kb]
 
   # ---- endings -----------------------------------------------------------------------
@@ -127,6 +128,11 @@ nodes:
     kind: escalate
     likely_cause: "AC-03 Not turning on: power, plug or socket problem; socket not burnt, wire not damaged (RentBasket KB: ticket)"
     technician_note: "Check socket, plug, wiring and the AC's power supply."
+  partial_ac04:
+    kind: escalate
+    partial: true
+    likely_cause: "AC-04 Weak airflow: filters cleaned on the call, airflow better but not normal (RentBasket KB)"
+    technician_note: "Filters already cleaned by the customer. Check blower and coil."
   esc_ac04:
     kind: escalate
     likely_cause: "AC-04 Weak airflow: filter blocked; self-fix not done or didn't help (RentBasket KB)"

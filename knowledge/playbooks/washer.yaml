@@ -70,6 +70,7 @@ nodes:
     outcomes:
       fixed: {next: resolved, label: "Yes, water is coming in"}
       not_fixed: {next: esc_wm01, label: "No, still no water"}
+      partly: {next: partial_wm01, label: "Water comes in now, but slowly or not properly"}
       pipe_leaks: {next: esc_wm02, label: "The pipe leaks after fitting it back"}
     sources: [rentbasket_kb]
 
@@ -98,6 +99,11 @@ nodes:
       en: "I'm sending you these steps on WhatsApp. When it's done, just tap 'Yes' there."
       hi: "मैं ये steps आपको WhatsApp पर भेज रही हूँ। काम हो जाए तो वहाँ 'Yes' दबा दीजिए।"
 
+  partial_wm01:
+    kind: escalate
+    partial: true
+    likely_cause: "WM-01 Water not coming in: inlet filter cleaned on the call, water comes in but slowly (RentBasket KB)"
+    technician_note: "Inlet filter already cleaned by the customer. Check the inlet valve and water pressure."
   esc_wm01:
     kind: escalate
     likely_cause: "WM-01 Water not coming in: inlet valve filter blocked; self-fix not done or didn't help (RentBasket KB)"

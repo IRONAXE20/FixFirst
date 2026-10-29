@@ -179,10 +179,14 @@ def test_customer_link_lists_open_tickets_takes_notes_and_asks_which_ticket(clie
     from sqlalchemy import select
 
     from fixfirst.db import customers, get_engine
+    from fixfirst.db import tickets as tickets_table
     for text in ("my fridge is broken", "my washing machine is broken"):
         client.scripts["responses"].append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", language="en")]))
         sid = client.post("/api/sessions", json={"customer_id": "C1", "mode": "text", "language": "en"}).json()["session_id"]
         client.post(f"/api/sessions/{sid}/text", json={"text": text})
+        if text.startswith("my fridge"):   # one ticket per customer: a second open one only after the team marks FIXED
+            with get_engine(client.db_url).begin() as c:
+                c.execute(tickets_table.update().values(status="FIXED"))
     with get_engine(client.db_url).connect() as c:
         token = c.execute(select(customers.c.link_token).where(customers.c.id == "C1")).scalar()
     info = client.get(f"/api/upload/{token}").json()

@@ -103,10 +103,16 @@ _ACTION_DONE = re.compile(r"(kar diya|kar di|kar diye|ho gaya|ho gayi|nikal diy
                           r"कर दिया|कर दी|हो गया|हो गई|निकाल दिया|बंद है|बाहर आ गए|बाहर आ गई")
 
 
+# A sentence cut off mid-way ("नहीं मैं बोल रहा था कि।", live call 30 Oct): the caller is still talking.
+_UNFINISHED = re.compile(r"(\b(ki|ke|that|but|because|and|lekin|par|kyunki|matlab|mai|main|i)|"
+                         r"(?<![ऀ-ॿ])(कि|के|लेकिन|पर|क्योंकि|मतलब|और|मैं))\W*$")
+
+
 def caller_is_done(text: str) -> bool:
     """After "anything else?": a short no / thanks / bye, with no new appliance or problem in it."""
     t = text.lower().strip()
-    return len(t.split()) <= 8 and bool(_DONE.search(t) or _DONE_NO.search(t)) and not _MORE.search(t)
+    return (len(t.split()) <= 8 and bool(_DONE.search(t) or _DONE_NO.search(t)) and not _MORE.search(t)
+            and not _UNFINISHED.search(t))
 
 
 # "Talk to a person" is a human handoff (RentBasket ecosystem), not a technician visit.
@@ -301,10 +307,31 @@ PHRASES = {
               "on the call. That way the technician comes prepared. Anything else I can help you with?",
     },
     "reopened": {
-        "hi": "ये problem आपके पिछले ticket {code} पर ही थी, तो मैंने वही ticket दोबारा खोल दिया है। {promise} "
-              "मैं details WhatsApp पर भेज रही हूँ। और कुछ मदद चाहिए?",
-        "en": "This is the same problem as your earlier ticket {code}, so I've reopened it. {promise} "
+        "hi": "ये आपके पिछले ticket {code} वाली ही appliance है, तो मैंने वही ticket दोबारा खोल कर high priority पर कर दिया है। "
+              "{promise} मैं details WhatsApp पर भेज रही हूँ। और कुछ मदद चाहिए?",
+        "en": "This is the same appliance as your earlier ticket {code}, so I've reopened it as high priority. {promise} "
               "I'm sending the details on WhatsApp. Anything else I can help you with?",
+    },
+    # RentBasket: one ticket per customer. Another appliance goes on the customer's open ticket.
+    "added": {
+        "hi": "मैंने इसे भी आपके ticket {code} में जोड़ दिया है। {promise} मैं details WhatsApp पर भेज रही हूँ। "
+              "और कुछ मदद चाहिए?",
+        "en": "I've added this to your ticket {code} as well. {promise} I'm sending the details on WhatsApp. "
+              "Anything else I can help you with?",
+    },
+    # The caller chases an appliance that's still waiting for a visit on their open ticket.
+    "already_open": {
+        "hi": "इस appliance का ticket {code} पहले से खुला है, तो मैंने नया ticket नहीं बनाया। मैंने इसे high priority पर "
+              "हमारी team को भेज दिया है, वो जल्दी से जल्दी आपसे contact करेंगे। और कुछ मदद चाहिए?",
+        "en": "There's already an open ticket {code} for this appliance, so I haven't made a new one. I've sent it to our "
+              "team as high priority, and they'll contact you as soon as possible. Anything else I can help you with?",
+    },
+    # The self-fix helped only partly: a technician finishes it (PARTIALLY_RESOLVED).
+    "partial": {
+        "hi": "अच्छा है कि थोड़ा फर्क पड़ा है। पूरी तरह ठीक करने के लिए मैंने ticket raise कर दिया है। {promise} आपका ticket "
+              "number है {code}। मैं details WhatsApp पर भेज रही हूँ। और कुछ मदद चाहिए?",
+        "en": "Good that it's a little better. I've raised a ticket to get it fully fixed. {promise} Your ticket number "
+              "is {code}. I'm sending the details on WhatsApp. Anything else I can help you with?",
     },
     "resolved_tail": {
         "hi": "और कुछ मदद चाहिए?",
@@ -607,7 +634,8 @@ class Brain:
             self.s.messages.append({"role": "assistant", "content": speech})
             self.s.publish("goodbye", early=True)
             result = TurnResult(speech=speech)
-        elif self.s.closed and self.s.asked_anything_else and not self.s.end_requested and caller_is_done(text):
+        elif (self.s.closed and self.s.asked_anything_else and not self.s.end_requested and caller_is_done(text)
+              and self._just_asked_anything_else()):
             # The problem is closed, we asked "anything else?", and the caller is done: say goodbye. On a
             # phone call the Bolna bridge then tells Bolna to hang up (see bolna.py hangup_answer).
             first = self.s.first_name
@@ -863,6 +891,9 @@ class Brain:
             self.s.stalls = 0
         elif own_words:
             speech = own_words
+            if (self.s.closed and self.s.asked_anything_else and not self.s.end_requested and not self.s.handed_off
+                    and not speech.rstrip().endswith("?")):
+                speech = f"{speech} {self._phrase('anything_else')}"
             if self.s.run and not self.s.run.finished and not self.s.closed and not self.s.ticket:
                 self.s.stalls += 1
                 if self.s.stalls >= STALL_LIMIT:
@@ -1004,11 +1035,11 @@ class Brain:
         if self.s.rentals:
             start_params["rental_id"] = {"type": "string", "enum": [r["id"] for r in self.s.rentals],
                                          "description": "Which rented unit (see CALL STATE)"}
-        if not self.s.ticket:
-            tools.append(_tool("start_troubleshooting", "Start the guided playbook for an appliance.", start_params,
-                               ["appliance", "symptom", "language"]))
-        else:
-            tools.append(_tool("add_note", "Add something the caller mentions (like another faulty appliance) to the booked ticket.",
+        tools.append(_tool("start_troubleshooting", "Start the guided playbook for an appliance (also for a "
+                           "different appliance after a ticket is booked: it joins the same ticket).", start_params,
+                           ["appliance", "symptom", "language"]))
+        if self.s.ticket:
+            tools.append(_tool("add_note", "Add more detail about the SAME appliance to its booked ticket.",
                                {"note": {"type": "string", "description": "Short note in English"}, "language": lang},
                                ["note", "language"]))
         run = self.s.run
@@ -1087,8 +1118,13 @@ class Brain:
 
     async def _tool_start_troubleshooting(self, args: dict, _presented: set[str]) -> dict:
         if self.s.ticket:
-            raise PlaybookError("a ticket is already booked on this call; use add_note for another problem")
-        if self.s.closed:   # a second problem after a phone fix
+            rental = self.s.rental_by_id(args.get("rental_id"))
+            wanted = rental["appliance"] if rental else args.get("appliance")
+            if wanted == self.s.appliance:
+                raise PlaybookError("this appliance already has a ticket; use add_note for more about it")
+            self.s.earlier_tickets.append(self.s.ticket)   # the next appliance gets its own ticket
+            self.s.ticket = None
+        if self.s.closed:   # a second problem after a phone fix or a booked ticket
             self.s.closed, self.s.outcome, self.s.resolution, self.s.presented = False, "in_progress", None, set()
             self._evidence_from = max(0, len(self.s.messages) - 1)   # the first problem's answers don't carry over
         appliance = args.get("appliance")
@@ -1106,6 +1142,14 @@ class Brain:
             return {"result": "asked the caller to confirm the product; wait for their answer",
                     "speak": self._phrase("product_one", product=product)}
         self.s.rental, self.s.appliance = rental, appliance
+        earlier = self.tickets.open_item(self.s)
+        if earlier:
+            # RentBasket: one ticket per customer. This appliance is still waiting for a visit on it: chase it
+            # (high alert), don't run the playbook again.
+            closing = await self._escalate(likely_cause=f"Customer called again about {earlier['code']}: "
+                                                        f"{args.get('symptom') or 'same problem'}",
+                                           technician_note=None, reason=None)
+            return {"result": f"open ticket {earlier['code']} chased as high alert", "speak": closing, "closing": True}
         playbook = self.library.for_appliance(appliance)
         if not playbook:
             prefix = self._phrase("no_playbook", appliance=appliance_name(appliance, self.s.language))
@@ -1354,7 +1398,8 @@ class Brain:
         if node.kind == "escalate":
             prefix = node.text(self.s.language)
             closing = await self._escalate(likely_cause=node.likely_cause or "Needs a technician",
-                                           technician_note=node.technician_note, reason=None)
+                                           technician_note=node.technician_note, reason=None,
+                                           status="PARTIALLY_RESOLVED" if node.partial else None)
             return {"result": "technician booked", "speak": f"{prefix} {closing}".strip(), "closing": True}
         if defer:
             return {"result": f"now at step {node.id}, not read to the caller yet", "pending": node.id}
@@ -1380,13 +1425,17 @@ class Brain:
         self._close("safety")
         return self.screen.script(kind, self.s.language, self.tenant)
 
-    async def _escalate(self, *, likely_cause: str, technician_note: str | None, reason: str | None) -> str:
-        ticket = await self.tickets.create(self.s, priority="normal", category="technician",
+    async def _escalate(self, *, likely_cause: str, technician_note: str | None, reason: str | None,
+                        status: str | None = None) -> str:
+        ticket = await self.tickets.create(self.s, priority="normal", category="technician", status=status,
                                            likely_cause=likely_cause, technician_note=technician_note, reason=reason)
         self._close("escalated")
         code = " ".join(ticket["code"].replace("-", ""))
         promise = self.tenant.normal_visit_promise.get(self.s.language, "")
-        return self._phrase("reopened" if ticket.get("reopened") else "escalated", code=code, promise=promise)
+        phrase = ("already_open" if ticket.get("repeat") else "reopened" if ticket.get("reopened")
+                  else "partial" if status == "PARTIALLY_RESOLVED" else "added" if ticket.get("joined")
+                  else "escalated")
+        return self._phrase(phrase, code=code, promise=promise)
 
     async def _resolve(self, resolution: str, text: str) -> str:
         self.s.resolution = resolution
@@ -1419,6 +1468,12 @@ class Brain:
             task.add_done_callback(self.tickets._pending.discard)
         else:
             self._pending_sends.append(coro)
+
+    def _just_asked_anything_else(self) -> bool:
+        """Was "anything else?" the last thing we said? (A "नहीं" may answer a different question: live call 30 Oct.)"""
+        last = next((m["content"] for m in reversed(self.s.messages)
+                     if m["role"] == "assistant" and isinstance(m.get("content"), str)), "")
+        return any(p in last for p in PHRASES["anything_else"].values())
 
     def _close(self, outcome: str) -> None:
         self.s.outcome = outcome
@@ -1535,8 +1590,10 @@ class Brain:
             lines.append("The call has been handed to a person (or a callback is promised). Reply briefly and kindly.")
         if self.s.ticket:
             lines.append(f"Ticket {self.s.ticket['code']} ({self.s.ticket['status']}) is booked. The call is wrapping up: "
-                         "reassure, answer questions about next steps, and say goodbye. If the caller mentions another "
-                         "problem, record it with add_note and say the technician will check it too.")
+                         "reassure and answer questions about next steps. A problem with a DIFFERENT appliance: call "
+                         "start_troubleshooting for it (it goes on the same ticket); never just say you noted it. More about the "
+                         "same appliance: add_note. If you aren't sure which appliance the caller means (speech-to-text "
+                         "garbles names), ask.")
         elif self.s.closed:
             lines.append(f"This problem is closed ({self.s.outcome}). Say goodbye unless the caller has another problem.")
         return "\n".join(lines)

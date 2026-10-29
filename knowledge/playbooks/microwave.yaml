@@ -58,6 +58,7 @@ nodes:
     outcomes:
       fixed: {next: resolved, label: "Yes, the smell is gone"}
       not_fixed: {next: esc_mw04, label: "No, it still smells"}
+      partly: {next: partial_mw04, label: "Smell is less, but not fully gone"}
       later: {next: steps_on_whatsapp, label: "Will clean it later"}
     sources: [rentbasket_kb]
 
@@ -90,6 +91,11 @@ nodes:
       hi: "कृपया microwave को खोलिए मत।"
     likely_cause: "MW-03 Turns on but doesn't work, or no power: likely capacitor (RentBasket KB: ticket; customer must never open it)"
     technician_note: "Microwave service: capacitor and power circuit. High voltage."
+  partial_mw04:
+    kind: escalate
+    partial: true
+    likely_cause: "MW-04 Bad smell: cleaned on the call, smell less but not gone (RentBasket KB)"
+    technician_note: "Customer already wiped the inside. Check for food residue in the vents and the turntable motor."
   esc_mw04:
     kind: escalate
     likely_cause: "MW-04 Bad smell; cleaning not done or didn't help (RentBasket KB)"

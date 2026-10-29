@@ -11,7 +11,7 @@ import secrets
 from datetime import timedelta
 
 from loguru import logger
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, or_, select, update
 from sqlalchemy.engine import Engine
 
 from .config import Settings, Tenant, now_utc
@@ -19,13 +19,42 @@ from .db import calls, customers, fetch_customer, followups, row, tickets
 from .session import CallSession, appliance_name
 from .whatsapp import WhatsApp
 
-STATES = ("NEW", "SELF_FIX_IN_PROGRESS", "RESOLVED_REMOTE", "TICKET_RAISED", "URGENT", "SCHEDULED", "IN_PROGRESS",
-          "FIXED", "REPLACED", "AUDIT_REVIEW", "CLOSED", "REOPENED")
-BOOKED = {"TICKET_RAISED", "URGENT", "REOPENED"}        # the team or a technician is coming
+STATES = ("NEW", "SELF_FIX_IN_PROGRESS", "RESOLVED_REMOTE", "PARTIALLY_RESOLVED", "TICKET_RAISED", "URGENT",
+          "SCHEDULED", "IN_PROGRESS", "FIXED", "REPLACED", "AUDIT_REVIEW", "CLOSED", "REOPENED")
+# PARTIALLY_RESOLVED: a self-fix on the call helped only partly, so a technician is booked to finish it.
+BOOKED = {"TICKET_RAISED", "URGENT", "REOPENED", "PARTIALLY_RESOLVED"}   # the team or a technician is coming
 SELF_FIX = {"SELF_FIX_IN_PROGRESS", "RESOLVED_REMOTE"}  # the customer is fixing it, or fixed it
-DONE = {"RESOLVED_REMOTE", "FIXED", "REPLACED", "CLOSED"}  # reopened if the same problem returns within 7 days
+DONE = {"RESOLVED_REMOTE", "FIXED", "REPLACED", "CLOSED"}  # reopened if the same problem returns within 30 days
 OPEN = set(STATES) - {"CLOSED", "RESOLVED_REMOTE"}      # what the customer link and "open tickets" show
-REOPEN_DAYS = 7
+# Not finished yet: a new call about the same unit goes on this ticket (RentBasket: one ticket per appliance).
+ACTIVE = OPEN - {"FIXED", "REPLACED"}
+REOPEN_DAYS = 30
+# What happened to one appliance on a ticket (summary["items"][i]["result"]).
+RESULT = {"NEW": "booked", "TICKET_RAISED": "booked", "REOPENED": "booked", "URGENT": "urgent",
+          "PARTIALLY_RESOLVED": "partial", "SELF_FIX_IN_PROGRESS": "self_fix_in_progress",
+          "RESOLVED_REMOTE": "self_fixed"}
+VISIT = {"booked", "urgent", "partial"}                 # a technician still has to come for it
+SELF_FIX_RESULTS = {"self_fix_in_progress", "self_fixed"}
+TEAM_STATES = {"SCHEDULED", "IN_PROGRESS", "AUDIT_REVIEW", "REOPENED"}   # set on /ops: lines don't override them
+RESULT_LABEL = {"booked": "visit needed", "urgent": "URGENT visit", "partial": "self-fix helped partly, visit needed",
+                "self_fix_in_progress": "customer doing the self-fix", "self_fixed": "fixed on the call"}
+
+
+def combined_status(items: list[dict], current: str | None = None) -> str:
+    """The ticket's status from its appliance lines. Some fixed and some still to visit is PARTIALLY_RESOLVED."""
+    results = {i.get("result") for i in items}
+    visit = results & VISIT
+    if "urgent" in results:
+        return "URGENT"
+    if visit and current in TEAM_STATES:
+        return current
+    if "partial" in results or (visit and "self_fixed" in results):
+        return "PARTIALLY_RESOLVED"
+    if visit:
+        return "TICKET_RAISED"
+    if "self_fix_in_progress" in results:
+        return "SELF_FIX_IN_PROGRESS"
+    return "RESOLVED_REMOTE"
 CHECK_HOURS = 24                                        # T9 check-in after RESOLVED_REMOTE, FIXED or REPLACED
 
 # T2 selffix_steps_<issue>: the KB's self-fix steps, fixed in each template body (Meta allows no line breaks
@@ -77,20 +106,25 @@ class TicketService:
         return self.ecosystem or not self.whatsapp.live
 
     # ---- tickets ---------------------------------------------------------------------
+    # RentBasket (30 Oct): ONE ticket per customer. Each appliance the customer reports is a line on it
+    # (summary["items"]), and the ticket's status follows its lines until the team moves it on /ops: one appliance
+    # fixed on the call and another needing a visit is PARTIALLY_RESOLVED.
     async def create(self, session: CallSession, *, priority: str, category: str, likely_cause: str,
                      technician_note: str | None = None, reason: str | None = None, status: str | None = None,
                      notify: bool = True) -> dict:
-        """Raise a ticket. Booked tickets (TICKET_RAISED / URGENT / REOPENED) are `session.ticket`, one per call;
-        a self-fix (SELF_FIX_IN_PROGRESS / RESOLVED_REMOTE) is `session.selffix_ticket` and notifies nobody."""
+        """Raise a ticket, or add this appliance to the customer's open one. A ticket a visit is pending on is
+        `session.ticket`; one that's only self-fixes is `session.selffix_ticket` and notifies nobody."""
         status = status or ("URGENT" if priority == "urgent" else "TICKET_RAISED")
-        self_fix = status in SELF_FIX
-        if not self_fix and session.ticket:
-            return session.ticket
         summary = self._summary(session, likely_cause, technician_note, reason)
-        if not self_fix:
-            reopened = self._reopen(session, summary, priority)
+        item = self._item(session, summary, status)
+        existing = self.find_active(session)
+        if existing:
+            return await self._add(session, existing, item, summary, priority, category, notify)
+        if status not in SELF_FIX:
+            reopened = self._reopen(session, item, summary, priority)
             if reopened:
                 return await self._booked(session, reopened, notify)
+        summary["items"] = [item]
         now = now_utc()
         token = secrets.token_urlsafe(12)
         with self.engine.begin() as c:
@@ -107,16 +141,19 @@ class TicketService:
                   "summary": summary, "photo_token": token, "photo_url": self.link_for(session, token),
                   "issue_id": issue_of(likely_cause), "origin_channel": self._channel(session),
                   "channels_used": "voice_only", "audit_required": bool(session.audit_required),
-                  "created_at": now.isoformat()}
+                  "high_alert": False, "created_at": now.isoformat()}
         if session.photos:
             from . import photos as photo_store
             photo_store.link_ticket(self.engine, session.photos, code)
-        if self_fix:
-            session.selffix_ticket = ticket
-            session.publish("ticket", ticket=ticket)
-            self.persist_call(session)
-            return ticket
+        if status in SELF_FIX:
+            return self._self_fix_only(session, ticket)
         return await self._booked(session, ticket, notify)
+
+    def _self_fix_only(self, session: CallSession, ticket: dict) -> dict:
+        session.selffix_ticket = ticket
+        session.publish("ticket", ticket=ticket)
+        self.persist_call(session)
+        return ticket
 
     async def _booked(self, session: CallSession, ticket: dict, notify: bool) -> dict:
         session.ticket = ticket
@@ -132,8 +169,114 @@ class TicketService:
         self.persist_call(session)
         return ticket
 
-    def _reopen(self, session: CallSession, summary: dict, priority: str) -> dict | None:
-        """The same problem on the same appliance within 7 days of a fix: reopen that ticket, don't start a new one."""
+    # ---- appliance lines -------------------------------------------------------------
+    @staticmethod
+    def _item(session: CallSession, summary: dict, status: str) -> dict:
+        return {"appliance": session.appliance, "appliance_label": summary["appliance_label"],
+                "brand": summary.get("brand"), "rental_id": (session.rental or {}).get("id"),
+                "issue_id": issue_of(summary["likely_cause"]), "likely_cause": summary["likely_cause"],
+                "technician_note": summary.get("technician_note"), "steps_tried": summary["steps_tried"],
+                "error_code": summary.get("error_code"), "result": RESULT[status], "call_id": session.id,
+                "at": now_utc().isoformat()}
+
+    @staticmethod
+    def items_of(t: dict) -> list[dict]:
+        """A ticket's appliance lines (tickets raised before 30 Oct have one, built from the summary)."""
+        s = t.get("summary") or {}
+        if s.get("items"):
+            return [dict(i) for i in s["items"]]
+        return [{"appliance": s.get("appliance"), "appliance_label": s.get("appliance_label"), "brand": s.get("brand"),
+                 "rental_id": t.get("rental_id"), "issue_id": t.get("issue_id"), "likely_cause": s.get("likely_cause"),
+                 "result": RESULT.get(t.get("status"), "booked"), "call_id": t.get("call_id")}]
+
+    @staticmethod
+    def _same_unit(a: dict, b: dict) -> bool:
+        if a.get("rental_id") and b.get("rental_id"):
+            return a["rental_id"] == b["rental_id"]
+        return a.get("appliance") == b.get("appliance")
+
+    def _as_ticket(self, session: CallSession, t: dict, **changes) -> dict:
+        t = {**t, **changes}
+        return {"id": t["id"], "code": t["code"], "priority": t["priority"], "category": t["category"],
+                "status": t["status"], "summary": t["summary"], "photo_token": t["photo_token"],
+                "photo_url": self.link_for(session, t["photo_token"]), "issue_id": t.get("issue_id"),
+                "origin_channel": t.get("origin_channel"), "channels_used": t.get("channels_used"),
+                "audit_required": bool(t.get("audit_required")), "high_alert": bool(t.get("high_alert")),
+                "created_at": t["created_at"].isoformat() if hasattr(t["created_at"], "isoformat") else t["created_at"],
+                "reopened": bool(t.get("reopened")), "repeat": bool(t.get("repeat")), "joined": bool(t.get("joined"))}
+
+    def find_active(self, session: CallSession) -> dict | None:
+        """The customer's one open ticket: this call's own (whatever its state), else their unfinished one."""
+        own = [t["code"] for t in (session.ticket, session.selffix_ticket, *session.earlier_tickets) if t]
+        cid = (session.customer or {}).get("id")
+        with self.engine.connect() as c:
+            if own:
+                t = row(c.execute(select(tickets).where(tickets.c.code == own[-1])).first())
+                if t:
+                    return t
+            if cid:
+                return row(c.execute(select(tickets).where(
+                    tickets.c.customer_id == cid, tickets.c.status.in_(ACTIVE))
+                    .order_by(tickets.c.updated_at.desc())).first())
+        return None
+
+    def open_item(self, session: CallSession) -> dict | None:
+        """The customer's open ticket, when the appliance the caller is talking about is already waiting for a visit
+        on it from an earlier call: the caller is chasing it."""
+        t = self.find_active(session)
+        if not t:
+            return None
+        unit = {"rental_id": (session.rental or {}).get("id"), "appliance": session.appliance}
+        for i in self.items_of(t):
+            if self._same_unit(i, unit) and i.get("result") in VISIT and i.get("call_id") != session.id:
+                return t
+        return None
+
+    async def _add(self, session: CallSession, t: dict, item: dict, summary: dict, priority: str, category: str,
+                   notify: bool) -> dict:
+        """Put this appliance on the customer's open ticket. Chasing an appliance that's still waiting for a visit
+        (from an earlier call) makes the ticket high alert; a new appliance just joins it."""
+        s = dict(t["summary"] or {})
+        items = self.items_of(t)
+        same = next((i for i in items if self._same_unit(i, item)), None)
+        chase = bool(same and same.get("call_id") != session.id and same.get("result") in VISIT
+                     and item["result"] not in SELF_FIX_RESULTS)
+        if chase:
+            s.setdefault("repeat_calls", []).append({
+                "call_id": session.id, "at": now_utc().isoformat(), "appliance": item["appliance_label"],
+                "likely_cause": item["likely_cause"], "steps_tried": item["steps_tried"], "reason": summary["reason"]})
+            if item["result"] == "urgent":
+                same["result"] = "urgent"
+        elif same:
+            same.update(item)   # this appliance's latest result: a self-fix that went on to a booking, or the reverse
+        else:
+            items.append(item)
+        s["items"] = items
+        s["appliance_label"] = " + ".join(dict.fromkeys(i["appliance_label"] or "appliance" for i in items))
+        s["hazard"] = summary["hazard"] or s.get("hazard")
+        if session.linked_by_otp:
+            s["caller_linked_by_otp"] = True
+        status = combined_status(items, t["status"])
+        alert = bool(t.get("high_alert")) or chase
+        new_priority = "urgent" if "urgent" in (priority, t["priority"]) else t["priority"]
+        new_category = category if t["category"] == "selffix" and item["result"] in VISIT else t["category"]
+        with self.engine.begin() as c:
+            c.execute(update(tickets).where(tickets.c.id == t["id"]).values(
+                status=status, priority=new_priority, category=new_category, summary=s, updated_at=now_utc(),
+                high_alert=alert, audit_required=bool(t.get("audit_required") or session.audit_required)))
+        if chase:
+            session.publish("repeat", code=t["code"], high_alert=True)
+        ticket = self._as_ticket(session, t, status=status, priority=new_priority, category=new_category, summary=s,
+                                 high_alert=alert, repeat=chase,
+                                 joined=not chase and not same)
+        if status in SELF_FIX:
+            return self._self_fix_only(session, ticket)
+        # Team: every booking and every chase. Customer (T1/T4): only a new visit, not a chase or a self-fix.
+        return await self._booked(session, ticket, notify and (chase or item["result"] in VISIT))
+
+    def _reopen(self, session: CallSession, item: dict, summary: dict, priority: str) -> dict | None:
+        """An appliance on a ticket fixed (or self-fixed) within 30 days comes back: reopen that ticket as high
+        alert instead of starting a new one."""
         cid = (session.customer or {}).get("id")
         if not cid or not session.appliance:
             return None
@@ -142,24 +285,26 @@ class TicketService:
             for t in (row(r) for r in c.execute(select(tickets).where(
                     tickets.c.customer_id == cid, tickets.c.status.in_(DONE), tickets.c.updated_at >= since)
                     .order_by(tickets.c.updated_at.desc()))):
-                if (t["summary"] or {}).get("appliance") != session.appliance:
+                items = self.items_of(t)
+                same = next((i for i in items if self._same_unit(i, item)), None)
+                if not same:
                     continue
+                same.update(item)
                 s = dict(t["summary"] or {})
+                s["items"] = items
                 s.setdefault("reopened", []).append({"call_id": session.id, "at": now_utc().isoformat(),
+                                                     "appliance": item["appliance_label"],
                                                      "likely_cause": summary["likely_cause"],
                                                      "steps_tried": summary["steps_tried"], "reason": summary["reason"]})
                 s["likely_cause"], s["hazard"] = summary["likely_cause"], summary["hazard"] or s.get("hazard")
                 new_priority = "urgent" if "urgent" in (priority, t["priority"]) else "normal"
+                status = "URGENT" if item["result"] == "urgent" else "REOPENED"
                 c.execute(update(tickets).where(tickets.c.id == t["id"]).values(
-                    status="REOPENED", priority=new_priority, summary=s, updated_at=now_utc(),
+                    status=status, priority=new_priority, summary=s, updated_at=now_utc(), high_alert=True,
                     audit_required=bool(t.get("audit_required") or session.audit_required)))
                 session.publish("reopened", code=t["code"])
-                return {"id": t["id"], "code": t["code"], "priority": new_priority, "category": t["category"],
-                        "status": "REOPENED", "summary": s, "photo_token": t["photo_token"],
-                        "photo_url": self.link_for(session, t["photo_token"]), "issue_id": t.get("issue_id"),
-                        "origin_channel": t.get("origin_channel"), "channels_used": t.get("channels_used"),
-                        "audit_required": bool(t.get("audit_required")), "created_at": t["created_at"].isoformat(),
-                        "reopened": True}
+                return self._as_ticket(session, t, status=status, priority=new_priority, summary=s,
+                                       high_alert=True, reopened=True)
         return None
 
     @staticmethod
@@ -251,7 +396,10 @@ class TicketService:
         tried = "; ".join(t["answer"] for t in s["steps_tried"]) or "none"
         code = s.get("error_code") or {}
         head = f"FixFirst ticket {ticket['code']} · {ticket['status']}" + (" (reopened)" if ticket.get("reopened") else "")
+        repeats = len(s.get("repeat_calls", [])) + len(s.get("reopened", []))
         lines = [
+            ("HIGH ALERT: the customer has come back about this " + ("again" if repeats < 2 else f"{repeats} times")
+             if ticket.get("high_alert") else None),
             head + (f" · SAFETY: {s['hazard']}" if s.get("hazard") else "")
             + (" · AUDIT REQUIRED" if ticket.get("audit_required") else ""),
             f"Customer: {cust.get('name') or 'Unknown caller'} · {cust.get('phone') or '-'} · {cust.get('area') or '-'}",
@@ -261,6 +409,12 @@ class TicketService:
             lines.append(f"SLA: call back within {self.tenant.urgent_callback_minutes} min and visit today")
         elif s.get("sla_hours"):
             lines.append(f"SLA: agree a visit time within {s['sla_hours']} h")
+        items = s.get("items") or []
+        if len(items) > 1:
+            lines.append("Appliances on this ticket:")
+            for i in items:
+                lines.append(f"- {i.get('appliance_label') or i.get('appliance')}: {RESULT_LABEL.get(i.get('result'), i.get('result'))}"
+                             f" ({i.get('likely_cause')})")
         if s.get("problem"):
             lines.append(f"Problem: {s['problem']}")
         if code:
@@ -275,7 +429,7 @@ class TicketService:
         for note in s.get("notes", []):
             lines.append(f"Also: {note}")
         lines += [f"Photos: {ticket['photo_url']}", f"Call log: {self.call_url(session_id)}"]
-        return "\n".join(lines)
+        return "\n".join(line for line in lines if line)
 
     def customer_message(self, ticket: dict, session: CallSession) -> str:
         """The v1 text (fixfirst_customer_update's one variable)."""
@@ -307,6 +461,8 @@ class TicketService:
             await self.whatsapp.send(number, "team", f"ticket_{ticket['category']}", team_body,
                                      ticket_code=ticket["code"], call_id=session.id)
         session.publish("whatsapp", audience="team", body=team_body)
+        if ticket.get("repeat") and ticket["status"] != "URGENT":
+            return   # the customer already has this ticket's message and link
         to = None if session.test_call else session.caller_phone
         if not self.ecosystem:   # fixfirst_service_request (Utility)
             name, product = self._names(session)

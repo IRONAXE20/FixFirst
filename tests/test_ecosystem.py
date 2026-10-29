@@ -163,7 +163,7 @@ def test_fridge_front_leak_steps_always_go_on_whatsapp(env):
     assert any(m["kind"] == "selffix_FR-04" for m in rows(env.engine, outbox))
 
 
-def test_same_problem_within_7_days_reopens_the_ticket(env):
+def test_same_appliance_within_30_days_of_a_fix_reopens_the_ticket_as_high_alert(env):
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
     ])
@@ -176,7 +176,7 @@ def test_same_problem_within_7_days_reopens_the_ticket(env):
     speech = run(brain2.respond("AC phir se thanda nahi kar raha")).speech
     assert session2.ticket["code"] == first and session2.ticket["status"] == "REOPENED"
     assert speech.startswith(brain2._phrase("reopened", code=" ".join(first.replace("-", "")), promise="").split("{")[0][:20])
-    assert len(rows(env.engine, tickets)) == 1
+    assert len(rows(env.engine, tickets)) == 1 and rows(env.engine, tickets)[0]["high_alert"]
 
 
 def test_an_old_fix_isnt_reopened(env):
@@ -186,7 +186,7 @@ def test_an_old_fix_isnt_reopened(env):
     run(brain.respond("AC thanda nahi kar raha"))
     env.tickets.set_status(session.ticket["code"], "CLOSED")
     with env.engine.begin() as c:
-        c.execute(update(tickets).values(updated_at=tickets.c.updated_at - timedelta(days=8)))
+        c.execute(update(tickets).values(updated_at=tickets.c.updated_at - timedelta(days=31)))
     brain2, session2, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
     ])
@@ -287,3 +287,103 @@ def test_a_number_linked_by_otp_gets_t10b_on_the_ecosystem_set(env):
     run(brain.respond(code))
     linked = [m for m in rows(env.engine, outbox) if m["kind"] == "T10b_number_linked"]
     assert linked and "+91 9811122233" in linked[0]["body"] and linked[0]["to"] == "+91 98111 22233"
+
+
+def test_a_second_appliance_on_the_call_goes_on_the_same_ticket(env):
+    # Live call 30 Oct: AC ticket booked, then "washing machine bhi…" was only "noted". RentBasket: one ticket per
+    # customer, one line per appliance.
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="washer", rental_id="R12", symptom="not_washing", language="hi")]),
+    ])
+    first = run(brain.respond("मेरा एसी ठीक से कूलिंग नहीं कर रहा।")).speech
+    assert first.endswith(brain._phrase("anything_else"))
+    code = session.ticket["code"]
+    second = run(brain.respond("मेरी वाशिंग मशीन भी ढंग से कपड़े नहीं धो रही।")).speech
+    assert second == brain._phrase("added", code=" ".join(code.replace("-", "")),
+                                   promise=env.tenant.normal_visit_promise["hi"])
+    [t] = rows(env.engine, tickets)
+    assert t["code"] == code and t["status"] == "TICKET_RAISED" and not t["high_alert"]
+    assert [i["appliance"] for i in t["summary"]["items"]] == ["ac", "washer"]
+    t1 = [m for m in rows(env.engine, outbox) if m["kind"].startswith("ticket_") and m["audience"] == "customer"
+          or m["kind"] == "T1_technician_booked"]
+    assert len(t1) == 2   # one customer message per appliance booked, same ticket code
+    team = [m for m in rows(env.engine, outbox) if m["audience"] == "team"][-1]["body"]
+    assert "Appliances on this ticket:" in team
+
+
+def test_one_appliance_fixed_on_the_call_and_one_booked_is_partially_resolved(env):
+    brain, session, _ = env.make(
+        [LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="hi")])]
+        + [LLMResult(tool_calls=[call("answer_step", outcome=o, language="hi")]) for o in ("near", "done", "done", "done", "fixed")]
+        + [LLMResult(tool_calls=[call("start_troubleshooting", appliance="fridge", rental_id="R13", symptom="not_cooling", language="hi")])])
+    for said in ("AC mein hawa kam aa rahi hai", "haan paas hoon", "band kar diya", "nikal diye", "dho diye",
+                 "haan ab theek hai", "fridge bhi thanda nahi kar raha"):
+        run(brain.respond(said))
+    [t] = rows(env.engine, tickets)
+    assert t["status"] == "PARTIALLY_RESOLVED"
+    assert {i["appliance"]: i["result"] for i in t["summary"]["items"]} == {"ac": "self_fixed", "fridge": "booked"}
+
+
+def test_a_new_appliance_on_a_later_call_joins_the_open_ticket_without_an_alert(env):
+    brain, session, _ = _ac(env, "not_cooling")
+    run(brain.respond("AC thanda nahi kar raha"))
+    brain2, session2, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="fridge", rental_id="R13", symptom="not_cooling", language="hi")])])
+    run(brain2.respond("fridge thanda nahi kar raha"))
+    [t] = rows(env.engine, tickets)
+    assert len(t["summary"]["items"]) == 2 and not t["high_alert"]
+
+
+def test_a_no_to_another_question_or_cut_off_does_not_end_the_call(env):
+    # Live call 30 Oct: the agent asked "आपका मतलब AC से है, सही समझा?" and "नहीं मैं बोल रहा था कि।" got the goodbye.
+    from fixfirst.brain import caller_is_done
+    assert not caller_is_done("नहीं मैं बोल रहा था कि।")
+    assert caller_is_done("नहीं, धन्यवाद") and caller_is_done("बस इतना ही")
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("say", text="जी, आपका मतलब AC से है, सही समझा?", language="hi")]),
+        LLMResult(tool_calls=[call("say", text="जी, बताइए किस appliance की बात कर रहे हैं?", language="hi")]),
+    ])
+    run(brain.respond("मेरा एसी ठीक से कूलिंग नहीं कर रहा।"))
+    run(brain.respond("फेज भी ढंग से कूलिंग नहीं कर रहा।"))
+    assert not session.end_requested
+    run(brain.respond("नहीं"))
+    assert not session.end_requested
+
+
+def _ac(env, *steps):
+    return env.make([LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom=steps[0],
+                                                 language="hi")])]
+                    + [LLMResult(tool_calls=[call("answer_step", outcome=o, language="hi")]) for o in steps[1:]])
+
+
+def test_calling_again_about_an_open_ticket_adds_to_it_as_high_alert(env):
+    # RentBasket: one ticket per appliance; chasing an unfinished ticket makes it high alert for the team.
+    brain, session, _ = _ac(env, "not_cooling")
+    run(brain.respond("AC thanda nahi kar raha"))
+    first = session.ticket["code"]
+    env.tickets.set_status(first, "SCHEDULED")
+    sent_before = len([m for m in rows(env.engine, outbox) if m["audience"] == "customer"])
+    brain2, session2, _ = _ac(env, "not_cooling")
+    speech = run(brain2.respond("AC abhi tak thanda nahi kar raha")).speech
+    assert speech == brain2._phrase("already_open", code=" ".join(first.replace("-", "")))
+    [t] = rows(env.engine, tickets)
+    assert t["code"] == first and t["high_alert"] and t["status"] == "SCHEDULED" and len(t["summary"]["repeat_calls"]) == 1
+    team = [m for m in rows(env.engine, outbox) if m["audience"] == "team"][-1]
+    assert team["body"].startswith("HIGH ALERT")
+    assert len([m for m in rows(env.engine, outbox) if m["audience"] == "customer"]) == sent_before
+
+
+def test_a_self_fix_that_helps_partly_is_partially_resolved_and_booked(env):
+    brain, session, _ = _ac(env, "weak_airflow", "near", "done", "done", "done", "partly")
+    for said in ("AC mein hawa kam aa rahi hai", "haan paas hoon", "band kar diya", "nikal diye", "dho diye",
+                 "thoda better hai par abhi bhi kam hai"):
+        speech = run(brain.respond(said)).speech
+    assert session.ticket["status"] == "PARTIALLY_RESOLVED"
+    assert speech.endswith(brain._phrase("anything_else")) and "थोड़ा फर्क" in speech
+    # The next call about the same AC goes on that ticket, as high alert.
+    brain2, session2, _ = _ac(env, "weak_airflow")
+    run(brain2.respond("AC mein abhi bhi hawa kam hai"))
+    [t] = [t for t in rows(env.engine, tickets) if t["status"] not in ("RESOLVED_REMOTE",)]
+    assert t["code"] == session.ticket["code"] and t["high_alert"]

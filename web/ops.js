@@ -50,7 +50,8 @@ function render() {
 }
 
 function priorityBadge(t) {
-  const audit = t.audit_required ? ` <span class="badge warn" title="Possible misuse: Auditing team">Audit</span>` : "";
+  const audit = (t.audit_required ? ` <span class="badge warn" title="Possible misuse: Auditing team">Audit</span>` : "")
+    + (t.high_alert ? ` <span class="badge bad" title="The customer came back about this appliance">High alert</span>` : "");
   if (t.priority === "urgent") return `<span class="badge bad">URGENT</span>${audit}`;
   const label = { system: "System", selffix: "Self-fix", handoff: "Handoff" }[t.category] || "Normal";
   return `<span class="badge ${t.category === "system" ? "warn" : "info"}">${label}</span>${audit}`;

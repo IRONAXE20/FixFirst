@@ -79,6 +79,8 @@ tickets = Table(
     Column("origin_channel", String(12)),                 # voice | whatsapp
     Column("channels_used", String(16)),                  # voice_only | whatsapp_only | both
     Column("audit_required", Boolean, default=False),
+    # The customer came back about the same unit (open ticket chased, or a fixed one reopened): high alert.
+    Column("high_alert", Boolean, default=False),
 )
 
 # A number that isn't on any RentBasket deal, linked to the account holder after an OTP to their number.
@@ -173,7 +175,7 @@ def get_engine(url: str | None = None) -> Engine:
 _ADDED = {
     "customers": [("link_token", "VARCHAR(40)")],
     "tickets": [("issue_id", "VARCHAR(16)"), ("origin_channel", "VARCHAR(12)"), ("channels_used", "VARCHAR(16)"),
-                ("audit_required", "BOOLEAN DEFAULT FALSE")],
+                ("audit_required", "BOOLEAN DEFAULT FALSE"), ("high_alert", "BOOLEAN DEFAULT FALSE")],
 }
 # Ticket statuses before the RentBasket lifecycle.
 _OLD_STATUS = {"open": "TICKET_RAISED", "assigned": "SCHEDULED", "closed": "CLOSED"}
