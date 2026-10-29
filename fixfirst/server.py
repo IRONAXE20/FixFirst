@@ -457,6 +457,7 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     def link_tickets(token: str) -> tuple[dict | None, list[dict]]:
         """/u/<token>: a customer's persistent link (their open tickets) or, for callers we couldn't identify,
         one ticket's own link. No OTP: the token is the login."""
+        token = clean_token(token)
         with engine.connect() as c:
             cust = row(c.execute(select(customers).where(customers.c.link_token == token)).first())
             if cust:
@@ -466,6 +467,11 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
                 return cust, rows
             t = row(c.execute(select(tickets).where(tickets.c.photo_token == token)).first())
         return None, [t] if t else []
+
+    def clean_token(token: str) -> str:
+        """technician_booked's button was approved as `/u/%7B%7B1%7D%7D{{1}}` (and fixfirst_service_request's the
+        same way), so links arrive as `{{1}}<token>`: drop the stray prefix and any trailing slash."""
+        return token.replace("{{1}}", "").replace("%7B%7B1%7D%7D", "").strip("/")
 
     def pick(token: str, code: str | None) -> dict:
         cust, rows = link_tickets(token)

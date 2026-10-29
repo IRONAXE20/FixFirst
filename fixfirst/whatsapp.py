@@ -13,6 +13,24 @@ from .db import outbox
 
 GRAPH_VERSION = os.environ.get("WHATSAPP_API_VERSION", "v23.0")
 
+# RentBasket's ecosystem templates were approved with named variables ({{name}}, {{product}}…), and Meta then
+# wants each body parameter's `parameter_name`. Callers still pass the values in this order.
+NAMED_PARAMS = {
+    "technician_booked": ["name", "product", "ticket_id", "care_number", "photo_link"],
+    "urgent_safety": ["name", "product", "ticket_id", "care_number"],
+    "followup_check": ["name", "product", "ticket_id"],
+    "number_linked": ["new_number", "account_holder"],
+    **{f"selffix_steps_{issue}": ["name"] for issue in ("ac04", "fr04", "wm01", "mw04")},
+}
+
+
+def body_parameters(template: str, params: list[str]) -> list[dict]:
+    names = NAMED_PARAMS.get(template)
+    if names and len(names) != len(params):
+        raise ValueError(f"{template} takes {len(names)} parameters, got {len(params)}")
+    return [{"type": "text", "text": template_param(p), **({"parameter_name": names[i]} if names else {})}
+            for i, p in enumerate(params)]
+
 
 def template_param(value: str, limit: int = 1000) -> str:
     """WhatsApp template parameters may not contain newlines/tabs or 4+ consecutive spaces."""
@@ -58,7 +76,7 @@ class WhatsApp:
         if not to:
             status = "no_recipient"
         elif self.live:
-            components = [{"type": "body", "parameters": [{"type": "text", "text": template_param(p)} for p in params]}]
+            components = [{"type": "body", "parameters": body_parameters(template, params)}]
             if button_param is not None:
                 components.append({"type": "button", "sub_type": "url", "index": "0",
                                    "parameters": [{"type": "text", "text": button_param}]})

@@ -38,7 +38,7 @@
     import { api, esc, LOGO } from "/static/common.js";
     const $ = (id) => document.getElementById(id);
     $("logo").innerHTML = LOGO;
-    const token = location.pathname.split("/").pop();
+    const token = location.pathname.split("/").filter(Boolean).pop();
     let chosen = null;
     try {
       const info = await api(`/api/upload/${token}`);

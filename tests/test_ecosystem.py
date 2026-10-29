@@ -261,3 +261,29 @@ def test_a_number_and_otp_said_in_pieces_are_put_together(env, monkeypatch):
     assert run(brain.respond(code[:3])).speech == brain._phrase("go_on")
     assert run(brain.respond(code[3:])).speech.startswith(brain._phrase("otp_ok"))
     assert session.customer["id"] == "C2" and not session.handed_off
+
+
+def test_ecosystem_templates_send_named_parameters():
+    # The ecosystem templates were approved with named variables ({{name}}…); the v1 ones are positional.
+    import pytest
+
+    from fixfirst.whatsapp import body_parameters
+    p = body_parameters("technician_booked", ["Hardik", "Split AC", "FF-1009", "+91 9958187021", "https://x/u/t"])
+    assert [x["parameter_name"] for x in p] == ["name", "product", "ticket_id", "care_number", "photo_link"]
+    assert body_parameters("selffix_steps_ac04", ["Hardik"])[0]["parameter_name"] == "name"
+    assert "parameter_name" not in body_parameters("fixfirst_service_request", ["a", "b", "c", "d"])[0]
+    assert "parameter_name" not in body_parameters("otp_verify", ["123456"])[0]
+    with pytest.raises(ValueError):
+        body_parameters("urgent_safety", ["Hardik"])
+
+
+def test_a_number_linked_by_otp_gets_t10b_on_the_ecosystem_set(env):
+    env.settings.whatsapp_templates = "ecosystem"
+    brain, session, _ = env.make([], customer=None, channel="phone", phone="+91 98111 22233")
+    run(brain.respond("fridge kharab hai"))
+    run(brain.respond("haan, mere roommate ke number se hai"))
+    run(brain.respond("nau zero zero zero zero zero zero zero zero do"))
+    code = next(m for m in rows(env.engine, outbox) if m["kind"] == "T10a_otp_verify")["body"].split()[0]
+    run(brain.respond(code))
+    linked = [m for m in rows(env.engine, outbox) if m["kind"] == "T10b_number_linked"]
+    assert linked and "+91 9811122233" in linked[0]["body"] and linked[0]["to"] == "+91 98111 22233"

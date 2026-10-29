@@ -1,5 +1,8 @@
 # WhatsApp templates to submit (RentBasket Customer Service Ecosystem, 29 Oct 2026)
 
+**30 Oct: all approved.** Meta saved them with named variables (`{{name}}`, `{{product}}`, `{{ticket_id}}`,
+`{{care_number}}`, `{{photo_link}}`); FixFirst sends `parameter_name` for each (`fixfirst/whatsapp.py` `NAMED_PARAMS`).
+
 Submit these in **WhatsApp Manager → Message templates → Create template**, on RentBasket's WhatsApp Business
 Account (2070784403431954), language **English (India)** (`en_IN`). The names must match exactly: FixFirst sends
 them by name. Variables are numbered `{{1}}`, `{{2}}`… in Meta's editor; the names below are what FixFirst

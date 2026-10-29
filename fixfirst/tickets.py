@@ -378,6 +378,16 @@ class TicketService:
                                                    preview=preview, button_param=otp, call_id=session.id)
         return status in ("sent", "dry_run")
 
+    async def send_number_linked(self, session: CallSession, holder: str) -> None:
+        """T10b number_linked to the caller's number once the OTP links it to the account holder's deal."""
+        if session.test_call or not session.caller_phone:
+            return
+        number = "+91 " + "".join(ch for ch in session.caller_phone if ch.isdigit())[-10:]
+        await self.whatsapp.send_template(session.caller_phone, "customer", "T10b_number_linked", "number_linked",
+                                          [number, holder], preview=f"Thanks! {number} is now linked to the Rentbasket "
+                                          f"account of {holder}. You can raise service requests from this number.",
+                                          call_id=session.id)
+
     def add_note(self, ticket: dict, note: str) -> None:
         ticket["summary"].setdefault("notes", []).append(note)
         with self.engine.begin() as c:

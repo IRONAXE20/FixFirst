@@ -195,3 +195,16 @@ def test_customer_link_lists_open_tickets_takes_notes_and_asks_which_ticket(clie
     assert up.status_code == 200 and up.json()["ticket"] == code
     t = next(t for t in client.get("/api/tickets").json() if t["code"] == code)
     assert t["summary"]["customer_notes"][0]["note"] == "it smells too" and t["photos"]
+
+
+def test_customer_link_works_through_the_broken_template_button(client):
+    # technician_booked's button was approved as /u/%7B%7B1%7D%7D{{1}}: links arrive as /u/{{1}}<token>.
+    from sqlalchemy import select
+
+    from fixfirst.db import customers, get_engine
+    client.scripts["responses"].append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", language="en")]))
+    sid = client.post("/api/sessions", json={"customer_id": "C1", "mode": "text", "language": "en"}).json()["session_id"]
+    client.post(f"/api/sessions/{sid}/text", json={"text": "my fridge is broken"})
+    with get_engine(client.db_url).connect() as c:
+        token = c.execute(select(customers.c.link_token).where(customers.c.id == "C1")).scalar()
+    assert client.get(f"/api/upload/%7B%7B1%7D%7D{token}").json()["name"] == "Ananya Sharma"

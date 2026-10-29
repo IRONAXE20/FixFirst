@@ -708,6 +708,8 @@ class Brain:
                 s.rentals = fetch_rentals(self.tickets.engine, otp["customer_id"])
                 s.identity, s.linked_by_otp, s.otp = "done", True, None
                 s.publish("number_linked", customer_id=otp["customer_id"])
+                if self.tickets.ecosystem:   # T10b
+                    self._background(self.tickets.send_number_linked(s, (s.customer or {}).get("name") or "the account holder"))
                 ok = self._phrase("otp_ok")
                 # Carry on with the problem the caller described at the start, if they did.
                 said = [m["content"] for m in s.messages if m["role"] == "user"]
