@@ -660,6 +660,8 @@ class Brain:
         else:
             result = await self._llm_turn(timing)
         self._finish_turn(result.speech, started, timing)
+        if self.s.end_requested and self.s.held_notifications:   # the goodbye: one WhatsApp for the whole call
+            self._background(self.tickets.send_held(self.s))
         while self._pending_sends:
             await self._pending_sends.pop(0)
         return result
@@ -813,6 +815,8 @@ class Brain:
                     self.s, 0, "disconnected",
                     f"{self.tenant.name} FixFirst: looks like our call about your {name} got cut. "
                     f"Reply here or call us back and we'll continue, or we can book a technician.")
+        if self.s.held_notifications:   # hung up before the goodbye
+            await self.tickets.send_held(self.s)
         self.tickets.persist_call(self.s)
         self.s.publish("ended", outcome=self.s.outcome)
 

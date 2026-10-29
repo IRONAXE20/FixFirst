@@ -56,6 +56,8 @@ class CallSession:
     # RentBasket ecosystem (29 Oct 2026)
     selffix_ticket: dict | None = None  # SELF_FIX_IN_PROGRESS / RESOLVED_REMOTE ticket (`ticket` = booked one)
     earlier_tickets: list = field(default_factory=list)   # tickets for other appliances booked earlier on this call
+    # Phone calls: ticket WhatsApps held until the caller has nothing more to report (code -> message the customer?)
+    held_notifications: dict = field(default_factory=dict)
     audit_required: bool = False       # possible misuse: the Auditing team reviews; never mention charges
     identity: str | None = None        # phone calls: None -> confirm | ask_other | await_number | await_otp -> done
     identity_tries: int = 0

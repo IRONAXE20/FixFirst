@@ -158,6 +158,12 @@ class TicketService:
     async def _booked(self, session: CallSession, ticket: dict, notify: bool) -> dict:
         session.ticket = ticket
         session.publish("ticket", ticket=ticket)
+        if notify and session.channel == "phone" and ticket["status"] != "URGENT":
+            # One WhatsApp per call, not one per appliance (user, 30 Oct): sent after the goodbye or the hang-up
+            # with every appliance on it. Safety (URGENT) still goes out at once.
+            held = session.held_notifications
+            held[ticket["code"]] = held.get(ticket["code"], False) or not ticket.get("repeat")
+            notify = False
         if not notify:
             pass
         elif self.notify_in_background:   # the caller hears the reply now; WhatsApp goes out meanwhile
@@ -444,28 +450,45 @@ class TicketService:
                 f"{promise} A photo of the problem or the display helps the technician come prepared: "
                 f"{ticket['photo_url']}")
 
-    def _names(self, session: CallSession) -> tuple[str, str]:
+    def _names(self, session: CallSession, product: str | None = None) -> tuple[str, str]:
         name = ((session.customer or {}).get("name") or "there").split(" ")[0]
-        product = (session.rental or {}).get("label") or appliance_name(session.appliance, "en") or "appliance"
+        product = (product or (session.rental or {}).get("label") or appliance_name(session.appliance, "en")
+                   or "appliance")
         return name, product
 
-    async def _notify_safely(self, session: CallSession, ticket: dict) -> None:
+    async def _notify_safely(self, session: CallSession, ticket: dict, **kw) -> None:
         try:
-            await self._notify(session, ticket)
+            await self._notify(session, ticket, **kw)
         except Exception as e:   # a WhatsApp failure must never surface in the call
             logger.exception(f"WhatsApp notification for {ticket['code']} failed: {e}")
 
-    async def _notify(self, session: CallSession, ticket: dict) -> None:
+    async def send_held(self, session: CallSession) -> None:
+        """The call is over (goodbye or hang-up): send each held ticket's WhatsApps once, naming every appliance
+        booked on this call."""
+        held, session.held_notifications = session.held_notifications, {}
+        for code, customer in held.items():
+            with self.engine.connect() as c:
+                t = row(c.execute(select(tickets).where(tickets.c.code == code)).first())
+            if not t:
+                continue
+            visits = [i.get("appliance_label") or i.get("appliance") for i in self.items_of(t)
+                      if i.get("result") in VISIT and i.get("call_id") == session.id]
+            product = " and ".join(dict.fromkeys(v for v in visits if v)) or None
+            ticket = self._as_ticket(session, t)
+            await self._notify_safely(session, ticket, customer=customer and bool(product), product=product)
+
+    async def _notify(self, session: CallSession, ticket: dict, customer: bool = True,
+                      product: str | None = None) -> None:
         team_body = self.team_message(ticket, session.id)
         for number in self.tenant.team_whatsapp or [None]:
             await self.whatsapp.send(number, "team", f"ticket_{ticket['category']}", team_body,
                                      ticket_code=ticket["code"], call_id=session.id)
         session.publish("whatsapp", audience="team", body=team_body)
-        if ticket.get("repeat") and ticket["status"] != "URGENT":
+        if (ticket.get("repeat") and ticket["status"] != "URGENT") or not customer:
             return   # the customer already has this ticket's message and link
         to = None if session.test_call else session.caller_phone
         if not self.ecosystem:   # fixfirst_service_request (Utility)
-            name, product = self._names(session)
+            name, product = self._names(session, product)
             if ticket["status"] == "URGENT":
                 line = (f"For your safety please keep it switched off at the wall and don't touch it. Our team will "
                         f"call you shortly from {self.tenant.care_number()}.")
@@ -480,7 +503,7 @@ class TicketService:
                                                        button_param=ticket["photo_url"].rsplit("/", 1)[-1],
                                                        ticket_code=ticket["code"], call_id=session.id)
         else:
-            name, product = self._names(session)
+            name, product = self._names(session, product)
             care = self.tenant.care_number((session.customer or {}).get("area"))
             if ticket["status"] == "URGENT":   # T4 urgent_safety
                 params = [name, product, ticket["code"], care]

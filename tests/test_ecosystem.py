@@ -387,3 +387,33 @@ def test_a_self_fix_that_helps_partly_is_partially_resolved_and_booked(env):
     run(brain2.respond("AC mein abhi bhi hawa kam hai"))
     [t] = [t for t in rows(env.engine, tickets) if t["status"] not in ("RESOLVED_REMOTE",)]
     assert t["code"] == session.ticket["code"] and t["high_alert"]
+
+
+def test_a_phone_call_sends_one_whatsapp_for_all_its_appliances_after_the_goodbye(env):
+    # Live call 30 Oct: AC then washing machine sent two near-identical technician_booked messages.
+    env.settings.whatsapp_templates, env.settings.identity_check = "ecosystem", False
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="washer", rental_id="R12", symptom="not_washing", language="hi")]),
+    ], channel="phone", phone="+91 90000 00001")
+    run(brain.respond("मेरा एसी ठीक से कूलिंग नहीं कर रहा।"))
+    run(brain.respond("मेरी वाशिंग मशीन भी ढंग से कपड़े नहीं धो रही।"))
+    t1 = lambda: [m for m in rows(env.engine, outbox) if m["kind"] == "T1_technician_booked"]
+    assert t1() == []                                   # held while the caller may report more
+    run(brain.respond("बस, धन्यवाद"))
+    [msg] = t1()
+    assert "Split AC 1.5 ton (bedroom) and Fully automatic top-load washing machine 6.5 kg" in msg["body"]
+    assert len([m for m in rows(env.engine, outbox) if m["audience"] == "team"]) == 1
+    run(brain.on_hangup())
+    assert len(t1()) == 1                               # not sent again at the hang-up
+
+
+def test_a_hang_up_before_the_goodbye_still_sends_the_held_whatsapp(env):
+    env.settings.identity_check = False
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+    ], channel="phone", phone="+91 90000 00001")
+    run(brain.respond("AC thanda nahi kar raha"))
+    assert not [m for m in rows(env.engine, outbox) if m["audience"] == "customer"]
+    run(brain.on_hangup())
+    assert [m for m in rows(env.engine, outbox) if m["audience"] == "customer"]

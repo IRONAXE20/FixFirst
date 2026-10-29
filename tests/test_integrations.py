@@ -317,6 +317,7 @@ def test_bolna_call_as_a_customer_is_a_test_call(phone):
     phone.llm.responses.append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", language="hi")]))
     phone.post("/bolna/v1/chat/completions", json=body, headers=AUTH)
     assert phone.get("/api/calls").json()[0]["customer_id"] == "RB9810000000"
+    phone.post(hook, json={"id": "exec-55", "status": "completed"})   # ticket WhatsApps go out when the call ends
     customer_msgs = [m for m in phone.get("/api/outbox").json() if m["audience"] == "customer"]
     assert customer_msgs and all(m["to"] is None for m in customer_msgs)   # nothing to the real customer
 
