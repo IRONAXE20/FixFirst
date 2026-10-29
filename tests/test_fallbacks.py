@@ -25,7 +25,7 @@ def test_demo_brain_drives_a_typed_call(env):
     brain, session, _ = env.make([], language="en")
     brain.llm = KeywordLLM()
     run(brain.respond("my AC's air is very low"))   # KB AC-04: a self-fix
-    assert session.run and session.run.current == "ac04_off"
+    assert session.run and session.run.current == "ac04_near"
     run(brain.respond("please just send a technician"))
     assert session.outcome == "escalated"
 

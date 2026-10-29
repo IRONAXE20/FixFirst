@@ -74,7 +74,27 @@ caller ── phone ──▶ Bolna (telephony + Sarvam speech-to-text, turn-tak
                      Bolna speaks it (Sarvam bulbul:v3)
 ```
 
-After a problem is fixed, booked or set for a follow-up, the agent asks "क्या मैं आपकी और कोई मदद कर सकती हूँ?". A "no / thanks / bye" gets "…आपका दिन शुभ हो!", and Bolna's hang-up check (sent to our endpoint after each reply) is answered "yes" only then. The end-of-call webhook closes the call record and adds the recording link to the ticket.
+### The call script (RentBasket Customer Service Ecosystem, 29 Oct 2026)
+
+The voice agent follows section 3 of RentBasket's ecosystem document:
+
+1. **Greeting:** "नमस्ते! मैं RentBasket की FixFirst service assistant बोल रही हूँ। आपकी क्या मदद कर सकती हूँ?" Hinglish to start; the caller's replies decide Hindi or English.
+2. **Identify** (phone calls): a registered caller is asked "आप {name} जी बोल रहे हैं? आपका address {area} है ना?". If the number isn't on any deal, the agent asks for a roommate's or family member's number, sends an **OTP** to that number on WhatsApp (template T10a) and the caller reads it back; the number is then linked to that account for future calls. A wrong OTP twice, or no other number, goes to a person.
+3. **Pick the product:** one of that type is confirmed ("आपके पास Voltas Split AC rent पर है। उसी के बारे में बात कर रहे हैं?"); several are named ("एक Voltas और एक Lloyd, किस वाले में?").
+4. **Capture the issue** ("problem थोड़ा बता दीजिए") and match it to a KB issue, confirming when unsure.
+5. **Safety gate on every turn:** switch off at the wall, URGENT ticket, "हमारी team जल्दी से जल्दी call करेगी" (callback within 1 hour plus a same-day visit, for the team).
+6. **KB action:** TICKET: "मैंने आपका ticket raise कर दिया है…", the ticket number, and the WhatsApp photo-and-notes link. SELF-FIX: "क्या आप अभी {product} के पास हैं?", then one step at a time and "क्या अब ठीक चल रहा है?"; not near (and always for FR-04, which takes 12 hours) the steps go on WhatsApp (T2).
+7. **Possible misuse:** "मैं ये सारी details हमारी team को भेज रही हूँ…", `audit_required` on the ticket for the Auditing team; the agent never decides or mentions charges.
+8. **Human handoff** when the caller asks for a person, is angry, the issue isn't in the KB, or the agent fails to understand twice: 9am–8pm IST a warm transfer to the care number (+91 9958187021, Bolna's transfer tool); outside those hours a ticket and "हमारी team कल सुबह 9 बजे के बाद आपको call करेगी".
+9. **Closing:** "और कुछ मदद चाहिए?", then "Thank you {name} जी। RentBasket choose करने के लिए शुक्रिया। Have a good day!", and the call ends (Bolna's end_call tool when offered, else its hang-up check).
+
+Steps 2 and 3 run on phone calls only and can be turned off with `IDENTITY_CHECK=false`. To call in as a demo customer from your own phone, set `TEST_CALLERS=98XXXXXXXX=C1` (nothing goes to real customers, no OTP).
+
+### Tickets
+
+One FF-xxxx series. Lifecycle: NEW → SELF_FIX_IN_PROGRESS → RESOLVED_REMOTE, or TICKET_RAISED / URGENT → SCHEDULED → IN_PROGRESS → FIXED / REPLACED → (AUDIT_REVIEW) → CLOSED; the same problem on the same appliance within 7 days of a fix **reopens** the old ticket. Every ticket records its KB issue, `origin_channel` (voice | whatsapp), `channels_used` (voice_only | both once a WhatsApp went out) and `audit_required`. The team moves tickets along on `/ops`; FIXED or REPLACED schedules the 24-hour check (T9). SLA shown to the team: agree a visit within 24 h (appliances) or 48 h (furniture).
+
+The customer has **one persistent link** (`/u/<token>`, no OTP) for photos and the note "Anything else you missed telling us on the call?"; with several open tickets they pick which one. The link is replaced when the mobile number changes and stops working when the rental ends.
 
 **Why it can only say what the playbooks support.** Every physical instruction is a step in a playbook: a decision graph where each step has `say.en` / `say.hi`, the allowed `outcomes` (each leading to the next step, a safety hazard or an ending), and the `sources` it was paraphrased from (`knowledge/sources.yaml`). The model only classifies the caller's answer into one of the current step's outcomes; the server rejects an outcome that isn't listed, an answer to a step the caller hasn't heard, or a jump that isn't declared.
 
@@ -145,15 +165,13 @@ Customer photos (from the WhatsApp upload link or the call page) are stored in S
 
 Calls go through Bolna's own hosted numbers; no separate Plivo account is needed. For customers to dial in, buy an inbound number inside Bolna (Plivo or Vobiz) and attach the agent. The Bolna account allows 2 calls at once.
 
-## WhatsApp (not live yet)
+## WhatsApp
 
-The phone number ID and business account ID are set. To go live you also need:
-1. A permanent **access token** (Meta Business Settings → System user, permission `whatsapp_business_messaging`) in `WHATSAPP_TOKEN`.
-2. Approved templates `fixfirst_customer_update` and `fixfirst_team_ticket` (one body variable `{{1}}` each). The customer template is currently categorised Marketing.
-3. The team's numbers in `knowledge/tenant.yaml` (`team_whatsapp`).
-4. `WHATSAPP_MODE=live`.
+Live from RentBasket's number (+91 99580 96702). Two template sets:
+- **v1** (approved, in use): `fixfirst_customer_update` and `fixfirst_team_ticket`, one body variable each.
+- **ecosystem** (`WHATSAPP_TEMPLATES=ecosystem` once Meta approves them): T1 `technician_booked` with the "Upload photo or details" button, T2 `selffix_steps_ac04/fr04/wm01/mw04`, T4 `urgent_safety`, T9 `followup_check`, T10a `otp_verify`. The exact text to submit is in [docs/whatsapp-templates.md](docs/whatsapp-templates.md). Until then an unregistered caller can't get an OTP and goes to a person.
 
-Until then every message lands in the outbox on `/ops`.
+The team's numbers go in `knowledge/tenant.yaml` (`team_whatsapp`); until then team messages land in the outbox on `/ops`. The 48-hour follow-up call (when the 24-hour WhatsApp gets no reply) needs an outbound telephony number on Bolna and isn't built yet.
 
 ## Project layout
 
@@ -180,7 +198,7 @@ Until then every message lands in the outbox on `/ops`.
 
 - **Live calls through Bolna work end to end:** call matching from webhooks, Claude replies in 1–2.7 s per turn (first answer ~1.3 s), safety alerts, technician booking, the end-of-call webhook. Fixes from five test calls are in.
 - **Eval on Claude:** fixable 12/12, escalations 12/12, safety 12/12, 0 guard blocks (the simulated caller occasionally contradicts its own script, so run it more than once).
-- **245 automated tests** pass without any key.
+- **Automated tests** (`pytest`) pass without any key.
 - **Not yet verified:** the goodbye and hang-up on a live call, recognising a real customer on a live call, live WhatsApp, inbound calls, photos and playbook editing on the live Supabase.
 - **Before a pilot:** Render Starter, WhatsApp token and templates, a restricted Supabase login instead of `postgres`, technician sign-off of every playbook, and a key on RentBasket's customer API.
 

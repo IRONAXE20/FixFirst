@@ -7,7 +7,7 @@ from fixfirst.brain import (LOOKAHEAD_ROUNDS, _node_vocab, _vocab, caller_is_don
                             technician_requested)
 
 from fixfirst.config import KNOWLEDGE_DIR
-from fixfirst.db import followups, outbox, tickets
+from fixfirst.db import customers, followups, outbox, tickets
 from fixfirst.llm import LLMError, LLMResult, call
 from fixfirst.playbooks import PlaybookLibrary, get_library
 
@@ -33,10 +33,10 @@ def rows(engine, table):
         return [dict(r._mapping) for r in c.execute(select(table))]
 
 
-def test_greeting_gives_consent_notice_and_technician_option(env):
+def test_greeting_is_the_rentbasket_script(env):
     brain, session, _ = env.make([])
     text = brain.greeting()
-    assert "record" in text and "technician" in text
+    assert "FixFirst service assistant" in text and text.endswith("आपकी क्या मदद कर सकती हूँ?")
     assert session.transcript[0]["role"] == "agent"
 
 
@@ -64,7 +64,8 @@ def test_full_phone_fix_flow(env):
     assert run(brain.respond("nahi, aisa kuch nahi")).speech == ac_text("ac07_remote")
     assert run(brain.respond("remote ki screen blank hai")).speech == ac_text("ac07_batteries")
     final = run(brain.respond("haan chal gaya")).speech
-    assert final.startswith("बढ़िया!") and ac_text("resolved") in final and "WhatsApp" in final
+    assert final.startswith("बढ़िया!") and ac_text("resolved") in final and final.endswith(brain._phrase("anything_else"))
+    assert session.selffix_ticket["status"] == "RESOLVED_REMOTE" and session.ticket is None
     assert session.outcome == "resolved" and session.ticket is None
     assert [p["node"] for p in session.run.path] == ["safety_check", "triage", "ac07_remote", "ac07_batteries"]
     assert rows(env.engine, followups)[0]["kind"] == "still_working"
@@ -150,7 +151,8 @@ def test_escalation_sends_photo_link_and_spoken_ticket_number(env):
     assert ticket["priority"] == "normal" and ticket["code"].startswith("FF-")
     assert " ".join(ticket["code"].replace("-", "")) in result.speech
     customer_msg = next(m for m in rows(env.engine, outbox) if m["audience"] == "customer")
-    assert f"/u/{ticket['photo_token']}" in customer_msg["body"]
+    token = next(c["link_token"] for c in rows(env.engine, customers) if c["id"] == "C2")
+    assert token and f"/u/{token}" in customer_msg["body"]   # the customer's one persistent link
 
 
 def test_appliance_without_playbook_books_technician(env):
@@ -176,17 +178,20 @@ def test_kb_ticket_issue_is_booked_at_once_without_any_fix(env):
 def test_kb_ac_filter_self_fix(env):
     brain, session, _ = env.make([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="near", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
         LLMResult(tool_calls=[call("answer_step", outcome="fixed", language="hi")]),
     ])
-    assert run(brain.respond("hawa kam aa rahi hai")).speech == kb_text("ac", "ac04_off")
+    assert run(brain.respond("hawa kam aa rahi hai")).speech == kb_text("ac", "ac04_near")
+    assert run(brain.respond("haan, AC ke paas hi hoon")).speech == kb_text("ac", "ac04_off")
     assert run(brain.respond("band kar diya")).speech == kb_text("ac", "ac04_filters")
     assert run(brain.respond("nikal liye")).speech == kb_text("ac", "ac04_wash")
     assert run(brain.respond("dho ke sukha diye")).speech == kb_text("ac", "ac04_refit")
     final = run(brain.respond("haan ab hawa theek aa rahi hai")).speech
     assert kb_text("ac", "resolved") in final and session.outcome == "resolved"
+    assert session.selffix_ticket["status"] == "RESOLVED_REMOTE"   # "Main ticket close kar rahi hoon"
 
 
 def test_kb_ac_burnt_socket_is_an_urgent_safety_ticket(env):
@@ -662,7 +667,7 @@ def test_anything_else_then_goodbye_ends_the_call(env):
     speech = run(brain.respond("mera AC kharab hai, kya karun")).speech
     assert speech.endswith(brain._phrase("anything_else"))
     goodbye = run(brain.respond("nahi bas, dhanyavaad")).speech
-    assert goodbye == brain._phrase("goodbye") and session.end_requested
+    assert goodbye == brain._phrase("goodbye", name=" Ananya जी") and session.end_requested
 
 
 def test_another_problem_after_anything_else_is_not_a_goodbye(env):
@@ -705,7 +710,7 @@ def test_gas_reminder_never_says_to_switch_anything_off():
 def test_only_the_scripted_goodbyes_contain_the_hang_up_phrases():
     # Bolna hangs up when the agent's last line contains one of these; the greeting and questions must not.
     from fixfirst.brain import PHRASES
-    marks = ("आपका दिन शुभ हो", "अलविदा", "have a nice day", "goodbye")
+    marks = ("आपका दिन शुभ हो", "अलविदा", "have a nice day", "have a good day", "goodbye")
     for key, texts in PHRASES.items():
         for text in texts.values():
             has = any(m in text.lower() for m in marks)

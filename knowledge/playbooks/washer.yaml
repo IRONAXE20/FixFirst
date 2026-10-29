@@ -1,6 +1,8 @@
 # Washing machine (Whirlpool only): RentBasket Service Knowledge Base v1, WM-01 to WM-05.
-# ACTION = TICKET issues get a ticket at once; WM-01 (inlet valve filter blocked) is the KB's self-fix.
-# Safety is caught on every turn by the hazard screen. The spoken wording still needs RentBasket's sign-off.
+# ACTION = TICKET issues get a ticket at once; WM-01 (inlet valve filter blocked) is the KB's self-fix, which
+# starts with "are you near the machine?" (if not, the steps go on WhatsApp, template T2). An issue the KB
+# doesn't list goes to a person. Safety is caught on every turn by the hazard screen.
+# The spoken wording still needs RentBasket's sign-off.
 id: washer_problem
 appliance: washer
 title: {en: "Washing machine problem (RentBasket KB WM-01 to WM-05)", hi: "Washing machine की problem (RentBasket KB WM-01 से WM-05)"}
@@ -11,10 +13,10 @@ triage_node: triage
 nodes:
   triage:
     say:
-      en: "Please tell me what's wrong with the washing machine."
-      hi: "बताइए, washing machine में क्या problem है?"
+      en: "Please tell me a little about the problem. What's happening with the washing machine?"
+      hi: "Washing machine की problem थोड़ा बता दीजिए, क्या हो रहा है?"
     outcomes:
-      not_filling: {next: wm01_off, label: "WM-01 Water not coming in (water not filling, paani nahi aa raha, machine mein paani nahi bhar raha)"}
+      not_filling: {next: wm01_near, label: "WM-01 Water not coming in (water not filling, paani nahi aa raha, machine mein paani nahi bhar raha)"}
       pipe_broken: {next: esc_wm02, label: "WM-02 Inlet or outlet pipe broken (pipe toot gaya, pipe broken, pipe se paani nikal raha hai)"}
       not_washing: {next: esc_wm03, label: "WM-03 Clothes not washed properly (kapde saaf nahi ho rahe, clothes still dirty)"}
       stops_midway: {next: esc_wm04, label: "WM-04 Machine stops while running (beech mein band ho jaati hai, stops mid-cycle)"}
@@ -23,10 +25,19 @@ nodes:
     sources: [rentbasket_kb]
 
   # ---- WM-01 water not coming in: self-fix (the inlet valve filter is blocked) ----------
+  wm01_near:
+    say:
+      en: "This can often be fixed at home: it's usually a blocked filter where the water pipe joins the machine. I'll take you through it step by step. Are you near the machine right now?"
+      hi: "ये अक्सर घर पर ही ठीक हो जाता है: आमतौर पर machine में पानी का pipe जहाँ जुड़ता है, वहाँ की filter बंद होती है। मैं आपको step by step बताती हूँ। क्या आप अभी machine के पास हैं?"
+    outcomes:
+      near: {next: wm01_off, label: "Yes, near the machine now"}
+      not_near: {next: steps_on_whatsapp, label: "Not near it, or would rather do it later"}
+    sources: [rentbasket_kb]
+
   wm01_off:
     say:
-      en: "This is usually a blocked filter where the water pipe joins the machine, and we can clean it. First, please switch off the machine and close its water tap. Tell me when done."
-      hi: "ऐसा आमतौर पर machine में पानी का pipe जहाँ जुड़ता है, वहाँ की filter बंद होने से होता है, और इसे साफ़ किया जा सकता है। पहले machine बंद कीजिए और उसका पानी का नल बंद कर दीजिए। हो जाए तो बताइए।"
+      en: "First, please switch off the machine and close its water tap. Tell me when done."
+      hi: "पहले machine बंद कीजिए और उसका पानी का नल बंद कर दीजिए। हो जाए तो बताइए।"
     outcomes:
       done: {next: wm01_unscrew, label: "Machine off, tap closed"}
       cant_do: {next: esc_wm01, label: "Can't do it"}
@@ -38,7 +49,7 @@ nodes:
       hi: "अब machine के पीछे से inlet pipe, यानी नल से पानी लाने वाला pipe, घुमा कर खोल दीजिए। खुल जाए तो बताइए।"
     outcomes:
       done: {next: wm01_filter, label: "Inlet pipe unscrewed"}
-      later: {next: followup, label: "Will do it later"}
+      later: {next: steps_on_whatsapp, label: "Will do it later"}
       cant_do: {next: esc_wm01, label: "Can't unscrew it or reach it"}
     sources: [rentbasket_kb]
 
@@ -48,14 +59,14 @@ nodes:
       hi: "Inlet के अंदर एक छोटी जाली वाली filter होती है। उसे बाहर निकालिए और बहते पानी में साफ़ कर लीजिए। साफ़ हो जाए तो बताइए।"
     outcomes:
       done: {next: wm01_refit, label: "Filter cleaned"}
-      later: {next: followup, label: "Will do it later"}
+      later: {next: steps_on_whatsapp, label: "Will do it later"}
       cant_do: {next: esc_wm01, label: "Can't find it or take it out"}
     sources: [rentbasket_kb]
 
   wm01_refit:
     say:
-      en: "Now fit the filter and the pipe back, open the tap, and start the machine. Did it work? Is water coming in now?"
-      hi: "अब filter और pipe वापस लगाइए, नल खोलिए, और machine चलाइए। क्या इससे ठीक हुआ? क्या अब पानी आ रहा है?"
+      en: "Now fit the filter and the pipe back, open the tap, and start the machine. Is it working properly now? Is water coming in?"
+      hi: "अब filter और pipe वापस लगाइए, नल खोलिए, और machine चलाइए। क्या अब ठीक चल रहा है? पानी आ रहा है?"
     outcomes:
       fixed: {next: resolved, label: "Yes, water is coming in"}
       not_fixed: {next: esc_wm01, label: "No, still no water"}
@@ -77,15 +88,15 @@ nodes:
     kind: resolve
     resolution: fixed_on_call
     say:
-      en: "Great, the machine is working properly again. If the problem comes back, please call us."
-      hi: "बहुत बढ़िया, machine फिर से ठीक चल रही है। अगर problem फिर आए, तो हमें call कीजिए।"
-
-  followup:
+      en: "Great! I'm closing the ticket. We'll check with you on WhatsApp tomorrow."
+      hi: "बहुत बढ़िया! मैं ticket close कर रही हूँ। कल हम WhatsApp पर check करेंगे।"
+  steps_on_whatsapp:
     kind: followup
-    followup_minutes: 60
+    followup_minutes: 1440
+    whatsapp: WM-01
     say:
-      en: "No problem. I'll message you on WhatsApp in about an hour. If water still doesn't come in after you clean the filter, just reply and I'll raise a ticket."
-      hi: "कोई बात नहीं। मैं लगभग एक घंटे में WhatsApp पर message करूँगी। अगर filter साफ़ करने के बाद भी पानी न आए, तो बस reply कर दीजिए, मैं ticket raise कर दूँगी।"
+      en: "I'm sending you these steps on WhatsApp. When it's done, just tap 'Yes' there."
+      hi: "मैं ये steps आपको WhatsApp पर भेज रही हूँ। काम हो जाए तो वहाँ 'Yes' दबा दीजिए।"
 
   esc_wm01:
     kind: escalate
@@ -109,5 +120,6 @@ nodes:
     technician_note: "Find the leak: hoses, seals, tub."
   esc_other:
     kind: escalate
+    handoff: true
     likely_cause: "Washing machine issue not in the RentBasket KB (see the caller's words)"
     technician_note: "Call the customer to understand the problem before the visit."

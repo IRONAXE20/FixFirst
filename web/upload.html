@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FixFirst Photo Upload</title>
+  <title>FixFirst Photos and Notes</title>
   <link rel="stylesheet" href="/static/styles.css">
   <style>
     .wrap { max-width: 460px; margin: 0 auto; padding: 28px 16px; display: grid; gap: 16px; }
@@ -11,6 +11,9 @@
     .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
     .ok { color: var(--ok); font-weight: 650; }
+    .tickets { display: grid; gap: 8px; }
+    .tickets label { display: flex; gap: 10px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+    textarea { width: 100%; min-height: 90px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); font: inherit; box-sizing: border-box; }
   </style>
 </head>
 <body>
@@ -19,9 +22,15 @@
     <section class="card card-pad" id="card">
       <h2 style="font-size:18px" id="title">Loading…</h2>
       <p class="muted" id="sub"></p>
-      <label class="btn primary big">📷 Take or choose a photo<input type="file" accept="image/*" capture="environment" id="file" hidden multiple></label>
-      <p class="small muted">Helpful photos: the error code on the display, the brand/model sticker, the problem area (for example, a leak).</p>
-      <div class="thumbs" id="thumbs"></div>
+      <div class="tickets hidden" id="pick"></div>
+      <div id="tools">
+        <label class="btn primary big">📷 Take or choose photos<input type="file" accept="image/*" capture="environment" id="file" hidden multiple></label>
+        <p class="small muted">Helpful photos: the problem area (for example, a leak), the error code on the display, the brand/model sticker. Optional, and you can add several.</p>
+        <div class="thumbs" id="thumbs"></div>
+        <label class="small" for="note" style="display:block;margin-top:14px;font-weight:600">Anything else you missed telling us on the call?</label>
+        <textarea id="note" placeholder="Optional"></textarea>
+        <button class="btn" id="send" style="margin-top:8px">Send note</button>
+      </div>
       <p id="msg"></p>
     </section>
   </main>
@@ -30,20 +39,43 @@
     const $ = (id) => document.getElementById(id);
     $("logo").innerHTML = LOGO;
     const token = location.pathname.split("/").pop();
+    let chosen = null;
     try {
       const info = await api(`/api/upload/${token}`);
       $("company").textContent = `for ${info.company}`;
-      $("title").textContent = `Ticket ${info.code}`;
-      $("sub").textContent = `${info.name ? info.name.split(" ")[0] + ", add" : "Add"} a photo of your ${info.appliance || "appliance"} so the technician comes prepared.`;
+      const first = info.name ? info.name.split(" ")[0] : "";
+      if (!info.tickets.length) {
+        $("title").textContent = first ? `Hi ${first}` : "No open request";
+        $("sub").textContent = "You have no open service request right now.";
+        $("tools").classList.add("hidden");
+      } else if (info.tickets.length === 1) {
+        chosen = info.tickets[0].code;
+        $("title").textContent = `Ticket ${chosen}`;
+        $("sub").textContent = `${first ? first + ", add" : "Add"} photos or a note about your ${info.tickets[0].appliance || "appliance"} so the technician comes prepared.`;
+      } else {
+        $("title").textContent = first ? `Hi ${first}` : "Your requests";
+        $("sub").textContent = "You have more than one open request. Which one is this about?";
+        $("pick").classList.remove("hidden");
+        $("pick").innerHTML = info.tickets.map((t) => `<label><input type="radio" name="t" value="${esc(t.code)}">
+          <span><b>${esc(t.appliance || "Appliance")}</b><br><span class="small muted">${esc(t.code)} · ${esc(t.status.replaceAll("_", " ").toLowerCase())}</span></span></label>`).join("");
+        $("pick").addEventListener("change", (e) => { chosen = e.target.value; $("msg").textContent = ""; });
+      }
     } catch (e) {
       $("title").textContent = "Link not found";
       $("sub").textContent = e.message;
-      document.querySelector("label.btn").classList.add("hidden");
+      $("tools").classList.add("hidden");
     }
+    const needTicket = () => {
+      if (chosen) return true;
+      $("msg").textContent = "Please choose the request first.";
+      return false;
+    };
     $("file").addEventListener("change", async (e) => {
+      if (!needTicket()) { e.target.value = ""; return; }
       for (const file of e.target.files) {
         const fd = new FormData();
         fd.append("file", file);
+        fd.append("ticket", chosen);
         $("msg").textContent = "Uploading…";
         try {
           const res = await api(`/api/upload/${token}`, fd);
@@ -54,6 +86,17 @@
         }
       }
       e.target.value = "";
+    });
+    $("send").addEventListener("click", async () => {
+      const note = $("note").value.trim();
+      if (!note || !needTicket()) return;
+      try {
+        await api(`/api/upload/${token}/note`, { note, ticket: chosen });
+        $("note").value = "";
+        $("msg").innerHTML = `<span class="ok">✓ Note sent. Thank you!</span>`;
+      } catch (err) {
+        $("msg").textContent = err.message;
+      }
     });
   </script>
 </body>

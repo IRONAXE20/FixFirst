@@ -1,5 +1,7 @@
 # Fridge (Whirlpool / Lloyd): RentBasket Service Knowledge Base v1, FR-01 to FR-05.
-# ACTION = TICKET issues get a ticket at once; FR-04 (front leak, choked front drain duct) is the KB's self-fix.
+# ACTION = TICKET issues get a ticket at once. FR-04 (front leak, choked front drain duct) is the KB's
+# self-fix; it takes 12 hours, so after the plug question its steps go on WhatsApp (template T2), as the
+# Customer Service Ecosystem call script says. An issue the KB doesn't list goes to a person.
 # Safety is caught on every turn by the hazard screen. The spoken wording still needs RentBasket's sign-off.
 id: fridge_not_cooling
 appliance: fridge
@@ -11,8 +13,8 @@ triage_node: triage
 nodes:
   triage:
     say:
-      en: "Please tell me what's wrong with the fridge."
-      hi: "बताइए, fridge में क्या problem है?"
+      en: "Please tell me a little about the problem. What's happening with the fridge?"
+      hi: "Fridge की problem थोड़ा बता दीजिए, क्या हो रहा है?"
     outcomes:
       not_cooling: {next: esc_fr01, label: "FR-01 Not cooling (not cooling, thanda nahi kar raha, food getting spoiled)"}
       ice_not_freezing: {next: esc_fr02, label: "FR-02 Ice not freezing (ice not forming, baraf nahi jam rahi, freezer not cold)"}
@@ -22,58 +24,24 @@ nodes:
       other: {next: esc_other, label: "Something else not listed here"}
     sources: [rentbasket_kb]
 
-  # ---- FR-04 front leak: self-fix (the front drain duct is choked) -------------------
+  # ---- FR-04 front leak: self-fix on WhatsApp (12 hours) --------------------------------
   fr04_plug:
     say:
       en: "First, is the water near the fridge's plug or socket?"
       hi: "पहले बताइए, क्या पानी fridge के plug या socket के पास है?"
     outcomes:
       near_plug: {hazard: water_electric, label: "Yes, near the plug or socket"}
-      not_near: {next: fr04_off, label: "No, away from the plug"}
-    sources: [rentbasket_kb]
-
-  fr04_off:
-    say:
-      en: "This usually happens when the small drain inside gets blocked, and we can clear it. Please switch off the fridge at the wall. Tell me when it's off."
-      hi: "ऐसा आमतौर पर अंदर की छोटी drain बंद होने से होता है, और इसे हम ठीक कर सकते हैं। कृपया fridge को wall switch से बंद कर दीजिए। बंद हो जाए तो बताइए।"
-    outcomes:
-      done: {next: fr04_empty, label: "Fridge switched off at the wall"}
-      cant_do: {next: esc_fr04, label: "Can't do it"}
-    sources: [rentbasket_kb]
-
-  fr04_empty:
-    say:
-      en: "Now please take the food out and keep the fridge door open. Tell me when that's done."
-      hi: "अब कृपया खाना बाहर निकाल लीजिए और fridge का door खुला रखिए। हो जाए तो बताइए।"
-    outcomes:
-      done: {next: fr04_fan, label: "Food out, door open"}
-      later: {next: followup_later, label: "Will do it later"}
-      cant_do: {next: esc_fr04, label: "Can't empty it right now"}
-    sources: [rentbasket_kb]
-
-  fr04_fan:
-    say:
-      en: "Switch on a fan facing the open fridge and leave it like this for 12 hours. After that, wipe it dry, close the door and switch the fridge back on. Can you do that?"
-      hi: "खुले fridge की तरफ एक fan चला दीजिए और 12 घंटे ऐसे ही छोड़ दीजिए। उसके बाद उसे पोंछ कर सुखाइए, door बंद कीजिए और fridge फिर से on कर दीजिए। क्या आप ऐसा कर पाएँगे?"
-    outcomes:
-      will_do: {next: followup_12h, label: "Yes, will leave it for 12 hours"}
-      cant_do: {next: esc_fr04, label: "Can't leave it off that long"}
+      not_near: {next: steps_on_whatsapp, label: "No, away from the plug"}
     sources: [rentbasket_kb]
 
   # ---- endings -----------------------------------------------------------------------
-  followup_12h:
+  steps_on_whatsapp:
     kind: followup
     followup_minutes: 780
+    whatsapp: FR-04
     say:
-      en: "Thank you. I'll message you on WhatsApp in about 13 hours. If water still leaks after you switch it back on, just reply and I'll raise a ticket."
-      hi: "धन्यवाद। मैं लगभग 13 घंटे में WhatsApp पर message करूँगी। अगर fridge वापस on करने के बाद भी पानी आए, तो बस reply कर दीजिए, मैं ticket raise कर दूँगी।"
-
-  followup_later:
-    kind: followup
-    followup_minutes: 180
-    say:
-      en: "No problem. I'll message you on WhatsApp in a few hours. If the leak continues after the 12 hours with the fan, just reply and I'll raise a ticket."
-      hi: "कोई बात नहीं। मैं कुछ घंटों में WhatsApp पर message करूँगी। अगर fan के साथ 12 घंटे के बाद भी पानी आए, तो बस reply कर दीजिए, मैं ticket raise कर दूँगी।"
+      en: "This usually happens when the small drain inside gets blocked, and it can be fixed at home, but it takes 12 hours. I'm sending you the steps on WhatsApp. When it's done, just tap 'Yes' there."
+      hi: "ऐसा आमतौर पर अंदर की छोटी drain बंद होने से होता है, और ये घर पर ही ठीक हो जाता है, पर इसमें 12 घंटे लगते हैं। मैं ये steps आपको WhatsApp पर भेज रही हूँ। काम हो जाए तो वहाँ 'Yes' दबा दीजिए।"
 
   esc_fr01:
     kind: escalate
@@ -87,15 +55,12 @@ nodes:
     kind: escalate
     likely_cause: "FR-03 Bulb not working (RentBasket KB: ticket)"
     technician_note: "Carry a bulb for this model."
-  esc_fr04:
-    kind: escalate
-    likely_cause: "FR-04 Water leaking from the front: front drain duct choked; self-fix not done (RentBasket KB)"
-    technician_note: "Clear the front drain duct."
   esc_fr05:
     kind: escalate
     likely_cause: "FR-05 Water leaking from the back (RentBasket KB: ticket)"
     technician_note: "Check the rear drain tray and connections."
   esc_other:
     kind: escalate
+    handoff: true
     likely_cause: "Fridge issue not in the RentBasket KB (see the caller's words)"
     technician_note: "Call the customer to understand the problem before the visit."

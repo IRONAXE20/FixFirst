@@ -146,7 +146,7 @@ def test_sse_chunks_are_openai_deltas_ending_in_done():
 
 
 @pytest.fixture
-def phone(tmp_path, monkeypatch):
+def phone(tmp_path, monkeypatch, request):
     monkeypatch.setattr(server, "UPLOADS", tmp_path / "uploads")
 
     async def fake_fetch(_settings, mobile):
@@ -154,7 +154,8 @@ def phone(tmp_path, monkeypatch):
 
     monkeypatch.setattr(rentbasket, "fetch", fake_fetch)
     settings = Settings(database_url=f"sqlite:///{(tmp_path / 'p.db').as_posix()}", whatsapp_mode="dry_run",
-                        public_base_url="http://test", fixfirst_llm_key="ff_test")
+                        public_base_url="http://test", fixfirst_llm_key="ff_test",
+                        identity_check=getattr(request, "param", False))   # the call-script tests turn it on
     llm = ScriptedLLM([])
     app = server.create_app(settings, llm_factory=lambda: llm)
     with TestClient(app) as c:
@@ -294,7 +295,7 @@ def test_bolna_hangup_check_says_yes_only_after_the_goodbye(phone):
     r = phone.post("/bolna/v1/chat/completions", json=check, headers=AUTH)
     assert json.loads(r.json()["choices"][0]["message"]["content"]) == {"hangup": "No"}
     r = phone.post("/bolna/v1/chat/completions", json=_body(first, booked, "nahi bas, thank you"), headers=AUTH)
-    assert "दिन शुभ हो" in _spoken(r)
+    assert "Have a good day" in _spoken(r)
     r = phone.post("/bolna/v1/chat/completions", json=check, headers=AUTH)
     assert json.loads(r.json()["choices"][0]["message"]["content"]) == {"hangup": "Yes"}
 
@@ -328,23 +329,23 @@ def test_bolna_reply_the_caller_never_heard_is_undone_and_their_pieces_answered_
     ac = get_library().for_appliance("ac")
     phone.llm.responses.extend([
         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="weak_airflow", language="hi")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
-        LLMResult(tool_calls=[call("answer_step", outcome="done", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="near", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="near", language="hi")]),
     ])
     head = [{"role": "system", "content": SYSTEM}, {"role": "assistant", "content": "नमस्ते! बताइए, क्या problem है?"},
             {"role": "user", "content": "AC में हवा कम आ रही है।"}]
     post = lambda msgs: _spoken(phone.post("/bolna/v1/chat/completions", headers=AUTH,
                                            json={"model": "fixfirst", "messages": msgs, "stream": True}))
     first = post(head)
-    assert first == ac.node("ac04_off").text("hi")
+    assert first == ac.node("ac04_near").text("hi")
     head.append({"role": "assistant", "content": first})
-    assert post(head + [{"role": "user", "content": "हाँ।"}]) == ac.node("ac04_filters").text("hi")
-    # Bolna's next request: no assistant message after "हाँ।", so the filters step was never spoken.
-    again = post(head + [{"role": "user", "content": "हाँ।"}, {"role": "user", "content": "बंद कर दिया।"}])
-    assert again == ac.node("ac04_filters").text("hi")
-    assert phone.llm.requests[-1]["messages"][-1]["content"] == "हाँ। बंद कर दिया।"
+    assert post(head + [{"role": "user", "content": "हाँ।"}]) == ac.node("ac04_off").text("hi")
+    # Bolna's next request: no assistant message after "हाँ।", so the switch-off step was never spoken.
+    again = post(head + [{"role": "user", "content": "हाँ।"}, {"role": "user", "content": "AC के पास ही हूँ।"}])
+    assert again == ac.node("ac04_off").text("hi")
+    assert phone.llm.requests[-1]["messages"][-1]["content"] == "हाँ। AC के पास ही हूँ।"
     path = phone.get("/api/calls").json()[0]["path"]
-    assert [p["node"] for p in path] == ["triage", "ac04_off"]   # the switch-off step answered once
+    assert [p["node"] for p in path] == ["triage", "ac04_near"]   # the "are you near it?" step answered once
 
 
 def test_bolna_end_call_tool_is_called_after_the_goodbye(phone):
@@ -357,7 +358,7 @@ def test_bolna_end_call_tool_is_called_after_the_goodbye(phone):
     booked = _spoken(r)
     assert '"end_call"' not in r.text   # "anything else?" is a question: the call stays up
     r = phone.post("/bolna/v1/chat/completions", json={**_body(first, booked, "नहीं बस"), "tools": tools}, headers=AUTH)
-    assert "दिन शुभ हो" in _spoken(r)
+    assert "Have a good day" in _spoken(r)
     chunks = [json.loads(line[6:]) for line in r.text.splitlines() if line.startswith("data: {")]
     calls = [tc for c in chunks for tc in c["choices"][0]["delta"].get("tool_calls", [])]
     assert [tc["function"]["name"] for tc in calls] == ["end_call"]
@@ -366,3 +367,28 @@ def test_bolna_end_call_tool_is_called_after_the_goodbye(phone):
     r = phone.post("/bolna/v1/chat/completions", json=_body(first, booked, "नहीं बस", "...", "ok bye", stream=False),
                    headers=AUTH)
     assert r.json()["choices"][0]["finish_reason"] == "stop"
+
+
+def test_bolna_handoff_in_hours_calls_the_transfer_tool(phone, monkeypatch):
+    from fixfirst.config import Tenant
+    monkeypatch.setattr(Tenant, "in_human_hours", lambda self, at=None: True)
+    tools = [{"type": "function", "function": {"name": "transfer_call_care", "parameters": {}}},
+             {"type": "function", "function": {"name": "end_call", "parameters": {}}}]
+    r = phone.post("/bolna/v1/chat/completions", json={**_body("mujhe kisi insaan se baat karni hai"), "tools": tools},
+                   headers=AUTH)
+    assert "connect कर रही हूँ" in _spoken(r)
+    chunks = [json.loads(line[6:]) for line in r.text.splitlines() if line.startswith("data: {")]
+    calls = [tc["function"]["name"] for c in chunks for tc in c["choices"][0]["delta"].get("tool_calls", [])]
+    assert calls == ["transfer_call_care"]
+
+
+def test_test_callers_ring_in_as_a_demo_customer(phone):
+    phone.app.state.bolna.test_callers["9811111111"] = "C1"   # TEST_CALLERS="9811111111=C1"
+    phone.llm.responses.append(LLMResult(tool_calls=[call("say", text="Ji, bataiye.", language="hi")]))
+    system = "FIXFIRST_CALL call_ref=exec-9 from=+919811111111 to=+918000000000 customer_phone={customer_phone}"
+    body = {"model": "fixfirst", "stream": False, "messages": [
+        {"role": "system", "content": system}, {"role": "assistant", "content": "नमस्ते!"},
+        {"role": "user", "content": "AC kharab hai"}]}
+    phone.post("/bolna/v1/chat/completions", json=body, headers=AUTH)
+    session = next(s for s in phone.app.state.store.sessions.values() if s.caller_phone and "9811111111" in s.caller_phone)
+    assert session.customer["id"] == "C1" and session.test_call

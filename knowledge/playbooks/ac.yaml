@@ -1,14 +1,16 @@
-# AC (Lloyd / Voltas): RentBasket Service Knowledge Base v1 (knowledge/sop/RentBasket_Issue_KB.md), AC-01 to AC-04.
+# AC (Lloyd / Voltas): RentBasket Service Knowledge Base v1 (knowledge/sop/RentBasket_Issue_KB.md), AC-01 to AC-04,
+# spoken as in RentBasket's Customer Service Ecosystem call script (29 Oct 2026).
 #
 # How playbooks work: the agent speaks each node's `say` text word for word and the LLM
 # only classifies the caller's answer into one of the node's `outcomes`. The server rejects
 # any transition that isn't listed, so the agent cannot give an instruction that isn't here.
 #
 # The KB decides: ACTION = TICKET issues get a ticket at once, with no fix suggested; ACTION = SELF-FIX
-# issues are guided one step at a time, ending with "did it work?", and get a ticket if not. Triage labels
-# carry the KB's "Customer says" words so the model can match the caller's own phrasing.
-# Safety (smoke, sparks, burning smell, shock, water near a plug) is caught on every turn by the hazard
-# screen before any step. The spoken wording is FixFirst's and still needs RentBasket's sign-off.
+# issues start with "are you near the AC?" (if not, the steps go on WhatsApp, template T2), then one step at
+# a time, ending with "is it working now?", and get a ticket if not. Triage labels carry the KB's "Customer
+# says" words. An issue the KB doesn't list goes to a person (`handoff`). Safety (smoke, sparks, burning
+# smell, shock, water near a plug) is caught on every turn by the hazard screen before any step.
+# The spoken wording is FixFirst's and still needs RentBasket's sign-off.
 id: ac_not_cooling
 appliance: ac
 title: {en: "AC problem (RentBasket KB AC-01 to AC-04)", hi: "AC की problem (RentBasket KB AC-01 से AC-04)"}
@@ -19,13 +21,13 @@ triage_node: triage
 nodes:
   triage:
     say:
-      en: "Please tell me what's wrong with the AC."
-      hi: "बताइए, AC में क्या problem है?"
+      en: "Please tell me a little about the problem. What's happening with the AC?"
+      hi: "AC की problem थोड़ा बता दीजिए, क्या हो रहा है?"
     outcomes:
       not_cooling: {next: esc_ac01, label: "AC-01 Not cooling (not cooling, cooling kam hai, thanda nahi kar raha, garam hawa)"}
       compressor: {next: esc_ac02, label: "AC-02 Compressor or outdoor unit not running (compressor not starting, outdoor unit not running, bahar wala unit band hai)"}
       power: {next: ac03_socket, label: "AC-03 Not turning on, plug or socket problem (AC not turning on, socket problem, plug problem, light nahi aa rahi, socket jal gaya)"}
-      weak_airflow: {next: ac04_off, label: "AC-04 Weak airflow, filter blocked (hawa kam aa rahi hai, low air, filter jaam, dust)"}
+      weak_airflow: {next: ac04_near, label: "AC-04 Weak airflow, filter blocked (hawa kam aa rahi hai, low air, filter jaam, dust)"}
       other: {next: esc_other, label: "Something else not listed here"}
     sources: [rentbasket_kb]
 
@@ -33,7 +35,7 @@ nodes:
   ac03_socket:
     say:
       en: "Is the socket or plug burnt or black?"
-      hi: "क्या socket या plug जला हुआ या काला है?"
+      hi: "क्या socket जला हुआ या काला है?"
     outcomes:
       burnt: {hazard: electrical, label: "Yes, burnt or black"}
       not_burnt: {next: ac03_wire, label: "No"}
@@ -42,17 +44,26 @@ nodes:
   ac03_wire:
     say:
       en: "Is the wire damaged, or has there been a short circuit?"
-      hi: "क्या तार खराब है, या कोई short circuit हुआ है?"
+      hi: "क्या wire damage है या short circuit हुआ है?"
     outcomes:
       damaged: {hazard: electrical, label: "Yes, damaged wire or a short circuit"}
       not_damaged: {next: esc_ac03, label: "No"}
     sources: [rentbasket_kb]
 
   # ---- AC-04 filter blocked: self-fix ------------------------------------------------
+  ac04_near:
+    say:
+      en: "This can often be fixed at home. I'll take you through it step by step. Are you near the AC right now?"
+      hi: "ये अक्सर घर पर ही ठीक हो जाता है। मैं आपको step by step बताती हूँ। क्या आप अभी AC के पास हैं?"
+    outcomes:
+      near: {next: ac04_off, label: "Yes, near the AC now"}
+      not_near: {next: steps_on_whatsapp, label: "Not near it, or would rather do it later"}
+    sources: [rentbasket_kb]
+
   ac04_off:
     say:
-      en: "Let's clean the filters. First, please switch off the AC from the remote and then at the wall switch. Tell me when it's off."
-      hi: "चलिए filters साफ़ करते हैं। पहले remote से AC बंद कीजिए, और फिर wall switch से। बंद हो जाए तो बताइए।"
+      en: "First, please switch off the AC from the remote and then at the wall switch. Tell me when it's off."
+      hi: "पहले remote से AC बंद कीजिए, और फिर wall switch से। बंद हो जाए तो बताइए।"
     outcomes:
       done: {next: ac04_filters, label: "AC is off at the remote and the wall"}
       cant_do: {next: esc_ac04, label: "Can't do it"}
@@ -67,7 +78,7 @@ nodes:
       hi: "Filters front panel के ठीक पीछे लगी पतली plastic की जाली होती हैं। Panel को नीचे के किनारे से उठाइए जब तक वो खुला न रुक जाए।"
     outcomes:
       done: {next: ac04_wash, label: "Filters are out (or already out and being washed)"}
-      later: {next: followup_hour, label: "Will do it later"}
+      later: {next: steps_on_whatsapp, label: "Will do it later"}
       cant_do: {next: esc_ac04, label: "Can't open the panel or reach the filters"}
     sources: [rentbasket_kb]
 
@@ -77,13 +88,13 @@ nodes:
       hi: "इन्हें सादे पानी से धो लीजिए और पूरी तरह सूखने दीजिए। सूख जाएँ तो बताइए, या बाद में करना हो तो वो भी बताइए।"
     outcomes:
       done: {next: ac04_refit, label: "Washed and dry"}
-      later: {next: followup_hour, label: "Drying; will finish later"}
+      later: {next: steps_on_whatsapp, label: "Drying; will finish later"}
     sources: [rentbasket_kb]
 
   ac04_refit:
     say:
-      en: "Now put the filters back, close the panel, and switch the AC on. Did it work? Is the air coming out properly now?"
-      hi: "अब filters वापस लगाइए, panel बंद कीजिए, और AC on कीजिए। क्या इससे ठीक हुआ? क्या अब हवा ठीक से आ रही है?"
+      en: "Now put the filters back, close the panel, and switch the AC on. Is it working properly now?"
+      hi: "अब filters वापस लगाइए, panel बंद कीजिए, और AC on कीजिए। क्या अब ठीक चल रहा है?"
     outcomes:
       fixed: {next: resolved, label: "Yes, the airflow is fine now"}
       not_fixed: {next: esc_ac04, label: "No, still weak"}
@@ -94,14 +105,15 @@ nodes:
     kind: resolve
     resolution: fixed_on_call
     say:
-      en: "Great, the AC is working properly again. If the problem comes back, please call us."
-      hi: "बहुत बढ़िया, AC फिर से ठीक चल रहा है। अगर problem फिर आए, तो हमें call कीजिए।"
-  followup_hour:
+      en: "Great! I'm closing the ticket. We'll check with you on WhatsApp tomorrow."
+      hi: "बहुत बढ़िया! मैं ticket close कर रही हूँ। कल हम WhatsApp पर check करेंगे।"
+  steps_on_whatsapp:
     kind: followup
-    followup_minutes: 60
+    followup_minutes: 1440
+    whatsapp: AC-04
     say:
-      en: "No problem. I'll message you on WhatsApp in about an hour. If the air is still weak after you put the filters back, just reply and I'll raise a ticket."
-      hi: "कोई बात नहीं। मैं लगभग एक घंटे में WhatsApp पर message करूँगी। अगर filters वापस लगाने के बाद भी हवा कम आए, तो बस reply कर दीजिए, मैं ticket raise कर दूँगी।"
+      en: "I'm sending you these steps on WhatsApp. When it's done, just tap 'Yes' there."
+      hi: "मैं ये steps आपको WhatsApp पर भेज रही हूँ। काम हो जाए तो वहाँ 'Yes' दबा दीजिए।"
 
   esc_ac01:
     kind: escalate
@@ -121,5 +133,6 @@ nodes:
     technician_note: "Clean filters and check blower and coil."
   esc_other:
     kind: escalate
+    handoff: true
     likely_cause: "AC issue not in the RentBasket KB (see the caller's words)"
     technician_note: "Call the customer to understand the problem before the visit."

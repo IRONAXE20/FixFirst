@@ -43,5 +43,6 @@ nodes:
     technician_note: "Carpenter visit; carry fasteners."
   esc_other:
     kind: escalate
+    handoff: true
     likely_cause: "Furniture issue not in the RentBasket KB (see the caller's words)"
     technician_note: "Call the customer to understand the problem before the visit."

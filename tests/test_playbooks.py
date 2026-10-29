@@ -32,8 +32,8 @@ def test_kb_ticket_issues_go_straight_to_a_ticket():
 
 def test_kb_self_fix_reaches_resolution():
     run = PlaybookRun(get_library().for_appliance("washer"))
-    assert run.start("not_filling").id == "wm01_off"
-    for outcome in ("done", "done", "done"):
+    assert run.start("not_filling").id == "wm01_near"
+    for outcome in ("near", "done", "done", "done"):
         run.advance(outcome)
     assert run.advance("fixed").node.kind == "resolve" and run.finished
 

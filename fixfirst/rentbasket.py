@@ -9,7 +9,7 @@ from sqlalchemy import delete, insert, select, update
 from sqlalchemy.engine import Engine
 
 from .config import Settings, now_utc
-from .db import customers, rentals
+from .db import customers, linked_customer, rentals
 
 CACHE_SECONDS = 600
 _cache: dict[str, tuple[float, dict | None]] = {}
@@ -93,7 +93,11 @@ async def sync_customer(engine: Engine, settings: Settings, phone: str | None, l
         return None
     data = await fetch(settings, mobile)
     if not data:
-        return None
+        # Not on any deal: maybe a roommate's or family member's number linked to an account by OTP.
+        holder = linked_customer(engine, mobile)
+        if holder and holder.startswith("RB") and holder[2:] != mobile:
+            await sync_customer(engine, settings, holder[2:], language)   # refresh the account holder's deal
+        return holder
     customer, rows = parse(data, mobile, language)
     with engine.begin() as c:
         exists = c.execute(select(customers.c.id).where(customers.c.id == customer["id"])).first()
@@ -105,4 +109,6 @@ async def sync_customer(engine: Engine, settings: Settings, phone: str | None, l
         c.execute(delete(rentals).where(rentals.c.customer_id == customer["id"]))
         if rows:
             c.execute(insert(rentals), rows)
+        else:   # the rental period has ended: the customer's photo link stops working
+            c.execute(update(customers).where(customers.c.id == customer["id"]).values(link_token=None))
     return customer["id"]

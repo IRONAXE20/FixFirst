@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
@@ -18,7 +18,7 @@ from sqlalchemy import desc, select, update
 from . import photos as photo_store
 from . import playbook_store
 from . import rentbasket
-from .bolna import BolnaBridge, completion_body, end_call_tool, sse_chunks, webhook_token
+from .bolna import BolnaBridge, completion_body, end_call_tool, sse_chunks, transfer_call_tool, webhook_token
 from .brain import Brain
 from .config import DATA_DIR, WEB_DIR, Settings, get_settings, get_tenant, now_utc
 from .db import calls, customers, fetch_rentals, get_engine, outbox, row, tickets
@@ -29,6 +29,8 @@ from .playbooks import PlaybookError, get_library
 from .safety import get_screen
 from .seed import seed_demo
 from .session import CallSession, SessionStore
+from .tickets import OPEN as OPEN_STATES
+from .tickets import STATES as TICKET_STATES
 from .tickets import TicketService
 from .whatsapp import WhatsApp
 
@@ -100,7 +102,7 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
             if llm is None:
                 raise HTTPException(503, "No model key is set. Add ANTHROPIC_API_KEY (or SARVAM_API_KEY) to .env and restart.")
             brains[session.id] = Brain(session, llm, tenant=tenant, settings=settings, library=library,
-                                       screen=screen, tickets=ticket_service, docs=docs)
+                                       screen=screen, tickets=ticket_service, docs=docs, lookup_customer=sync_customer)
         return brains[session.id]
 
     def session_or_404(session_id: str) -> CallSession:
@@ -112,7 +114,8 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     async def sync_customer(phone: str | None) -> str | None:
         return await rentbasket.sync_customer(engine, settings, phone, language=tenant.default_language)
 
-    bolna = BolnaBridge(store=store, brain_for=brain_for, sync_customer=sync_customer, tenant=tenant)
+    bolna = BolnaBridge(store=store, brain_for=brain_for, sync_customer=sync_customer, tenant=tenant,
+                        test_callers=settings.test_callers)
 
     last_purge = [-1e9]
 
@@ -145,6 +148,7 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
             t.cancel()
 
     app = FastAPI(title="FixFirst", lifespan=lifespan)
+    app.state.bolna, app.state.store = bolna, store   # for tests and diagnostics
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
     @app.get("/media/{path:path}", include_in_schema=False)
@@ -368,6 +372,14 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
         end_tool = end_call_tool(body) if speech and bolna.call_ends(messages) else None
         if end_tool:
             logger.info(f"Ending the call with Bolna's {end_tool} tool after the goodbye")
+        elif speech and bolna.call_transfers(messages):
+            # 9am-8pm handoff: "Main aapko hamari service team se connect kar rahi hoon", then Bolna's transfer tool
+            # (configured by bolna-setup to the care number) moves the call to a person.
+            end_tool = transfer_call_tool(body)
+            if end_tool:
+                logger.info(f"Transferring the call with Bolna's {end_tool} tool")
+            else:
+                logger.warning("Handoff asked for a transfer, but Bolna offered no transfer tool (run bolna-setup)")
         if not body.get("stream"):
             return completion_body(speech, model, end_tool)
 
@@ -389,20 +401,24 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     async def list_tickets():
         with engine.connect() as c:
             out = [row(r) for r in c.execute(select(tickets).order_by(desc(tickets.c.id)).limit(200))]
-        for t in out:
-            t["photo_url"] = ticket_service.photo_url(t["photo_token"])
+        for t in out:   # the customer's persistent link when we know them, else the ticket's own
+            t["photo_url"] = ticket_service.photo_url(ticket_service.customer_token(t["customer_id"]) or t["photo_token"])
             t["photos"] = [f"/media/{p}" for p in t["photos"] or []]
         return out
 
     @app.patch("/api/tickets/{code}")
     async def patch_ticket(code: str, body: TicketPatch):
-        if body.status not in ("open", "assigned", "closed"):
-            raise HTTPException(400, "status must be open, assigned or closed")
-        with engine.begin() as c:
-            res = c.execute(update(tickets).where(tickets.c.code == code).values(status=body.status, updated_at=now_utc()))
-        if not res.rowcount:
+        try:
+            t = ticket_service.set_status(code, body.status)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+        if not t:
             raise HTTPException(404, "Unknown ticket")
         return {"code": code, "status": body.status}
+
+    @app.get("/api/ticket-states")
+    async def ticket_states():
+        return list(TICKET_STATES)
 
     @app.get("/api/calls")
     async def list_calls():
@@ -422,7 +438,7 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     async def stats():
         with engine.connect() as c:
             all_calls = [row(r) for r in c.execute(select(calls))]
-            open_tickets = sum(1 for _ in c.execute(select(tickets.c.id).where(tickets.c.status != "closed")))
+            open_tickets = sum(1 for _ in c.execute(select(tickets.c.id).where(tickets.c.status.in_(OPEN_STATES))))
         finished = [x for x in all_calls if x["outcome"] not in ("in_progress",)]
         by = {k: sum(1 for x in finished if x["outcome"] == k) for k in ("resolved", "escalated", "safety", "followup", "abandoned")}
         decided = by["resolved"] + by["escalated"]
@@ -438,28 +454,75 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
         }
 
     # ---- photo upload (link sent on WhatsApp) ----------------------------------------------
+    def link_tickets(token: str) -> tuple[dict | None, list[dict]]:
+        """/u/<token>: a customer's persistent link (their open tickets) or, for callers we couldn't identify,
+        one ticket's own link. No OTP: the token is the login."""
+        with engine.connect() as c:
+            cust = row(c.execute(select(customers).where(customers.c.link_token == token)).first())
+            if cust:
+                rows = [row(r) for r in c.execute(select(tickets).where(
+                    tickets.c.customer_id == cust["id"], tickets.c.status.in_(OPEN_STATES))
+                    .order_by(desc(tickets.c.created_at)))]
+                return cust, rows
+            t = row(c.execute(select(tickets).where(tickets.c.photo_token == token)).first())
+        return None, [t] if t else []
+
+    def pick(token: str, code: str | None) -> dict:
+        cust, rows = link_tickets(token)
+        if not rows:
+            raise HTTPException(404, "This link is invalid, has expired, or has no open ticket")
+        if code:
+            t = next((t for t in rows if t["code"] == code), None)
+            if not t:
+                raise HTTPException(404, "That ticket isn't open on this link")
+            return t
+        if len(rows) > 1:
+            raise HTTPException(400, "Several tickets are open: choose one")
+        return rows[0]
+
     @app.get("/api/upload/{token}")
     async def upload_info(token: str):
-        with engine.connect() as c:
-            t = row(c.execute(select(tickets).where(tickets.c.photo_token == token)).first())
-        if not t:
+        cust, rows = link_tickets(token)
+        if not rows and not cust:
             raise HTTPException(404, "This link is invalid or has expired")
-        s = t["summary"]
-        return {"code": t["code"], "appliance": s.get("appliance_label"), "name": (s.get("customer") or {}).get("name"),
-                "photos": len(t["photos"] or []), "company": tenant.name}
+        name = (cust or {}).get("name") or ((rows[0]["summary"] or {}).get("customer") or {}).get("name") if rows else (cust or {}).get("name")
+        items = [{"code": t["code"], "appliance": (t["summary"] or {}).get("appliance_label"), "status": t["status"],
+                  "photos": len(t["photos"] or []), "notes": len((t["summary"] or {}).get("customer_notes", []))}
+                 for t in rows]
+        first = items[0] if items else {}
+        return {"name": name, "company": tenant.name, "tickets": items, "persistent": bool(cust),
+                # the single-ticket shape the old page used
+                "code": first.get("code"), "appliance": first.get("appliance"), "photos": first.get("photos", 0)}
 
     @app.post("/api/upload/{token}")
-    async def upload_photo(token: str, file: UploadFile = File(...)):
-        with engine.connect() as c:
-            t = row(c.execute(select(tickets).where(tickets.c.photo_token == token)).first())
-        if not t:
-            raise HTTPException(404, "This link is invalid or has expired")
+    async def upload_photo(token: str, file: UploadFile = File(...), ticket: str | None = Form(None)):
+        t = pick(token, ticket)
         rel = await _save_photo(engine, file, call_id=t["call_id"], ticket_code=t["code"])
-        ticket_service.add_photo(token, rel)
+        ticket_service.add_photo(t["photo_token"], rel)
         live = store.get(t["call_id"] or "")
         if live:
             live.publish("photo", path=rel)
-        return {"ok": True, "url": f"/media/{rel}"}
+        return {"ok": True, "url": f"/media/{rel}", "ticket": t["code"]}
+
+    class CustomerNote(BaseModel):
+        note: str
+        ticket: str | None = None
+
+    @app.post("/api/upload/{token}/note")
+    async def upload_note(token: str, body: CustomerNote):
+        """"Anything else you missed telling us on the call?" Attached to the chosen open ticket."""
+        note = body.note.strip()[:1000]
+        if not note:
+            raise HTTPException(400, "Please write something")
+        t = pick(token, body.ticket)
+        summary = dict(t["summary"] or {})
+        summary.setdefault("customer_notes", []).append({"note": note, "at": now_utc().isoformat()})
+        with engine.begin() as c:
+            c.execute(update(tickets).where(tickets.c.id == t["id"]).values(summary=summary, updated_at=now_utc()))
+        live = store.get(t["call_id"] or "")
+        if live:
+            live.publish("note", note=note)
+        return {"ok": True, "ticket": t["code"]}
 
     # ---- knowledge -------------------------------------------------------------------------
     @app.get("/api/playbooks")

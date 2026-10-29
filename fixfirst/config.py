@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 
@@ -22,6 +22,13 @@ def now_utc() -> datetime:
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def now_ist() -> datetime:
+    return datetime.now(IST)
 
 
 @dataclass
@@ -53,6 +60,16 @@ class Settings:
     fixfirst_llm_key: str = ""            # the key Bolna sends when it calls our brain as its custom LLM
     admin_key: str = ""                   # needed to edit playbooks on /knowledge (editing is off without it)
     photo_retention_days: int = 7         # photos are deleted this many days after their ticket is closed
+    # "v1": the two approved templates (fixfirst_customer_update / fixfirst_team_ticket). "ecosystem": RentBasket's
+    # T1 technician_booked, T2 selffix_steps_<issue>, T4 urgent_safety, T9 followup_check, T10a otp_verify
+    # (docs/whatsapp-templates.md). Switch once Meta has approved them.
+    whatsapp_templates: str = "v1"
+    # Your own phone numbers that should call in as a demo customer ("9654117078=C1,9810000000=C2"), marked as
+    # test calls: no messages to real customers, no OTP.
+    test_callers: dict = field(default_factory=dict)
+    # Call script steps 2-4 on phone calls: confirm the caller's name and area, link an unregistered number by
+    # OTP, confirm the product. On by default.
+    identity_check: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -92,6 +109,9 @@ class Settings:
             fixfirst_llm_key=_env("FIXFIRST_LLM_KEY"),
             admin_key=_env("ADMIN_KEY"),
             photo_retention_days=int(_env("PHOTO_RETENTION_DAYS", "7")),
+            whatsapp_templates=_env("WHATSAPP_TEMPLATES", "v1").lower(),
+            test_callers=_pairs(_env("TEST_CALLERS")),
+            identity_check=_env("IDENTITY_CHECK", "true").lower() not in ("0", "false", "no", "off"),
         )
 
     @property
@@ -104,6 +124,18 @@ class Settings:
         if self.llm_provider == "anthropic" or (self.llm_provider == "auto" and self.anthropic_api_key):
             return "anthropic" if self.anthropic_api_key else None
         return "sarvam" if self.sarvam_ready else None
+
+
+def _pairs(raw: str) -> dict:
+    """"9654117078=C1, 9810000000=C2" -> {"9654117078": "C1", ...} (last 10 digits of each number)."""
+    out = {}
+    for part in raw.split(","):
+        if "=" in part:
+            num, cid = part.split("=", 1)
+            digits = "".join(ch for ch in num if ch.isdigit())[-10:]
+            if digits and cid.strip():
+                out[digits] = cid.strip()
+    return out
 
 
 @dataclass
@@ -124,6 +156,17 @@ class Tenant:
     emergency_numbers: dict = field(default_factory=dict)
     followup_hours: int = 24
     technician_visit_cost_inr: int = 0
+    care_numbers: dict = field(default_factory=dict)       # city -> customer care number ("default" for all)
+    human_hours: tuple = (9, 20)                           # live handoff window, IST, [start, end)
+    sla_hours: dict = field(default_factory=dict)          # appliance | furniture -> hours to agree a visit time
+
+    def care_number(self, city: str | None = None) -> str:
+        """{{care_number}} in the WhatsApp templates: care_number = lookup(customer.city or service_area)."""
+        return self.care_numbers.get((city or "").strip().lower()) or self.care_numbers.get("default") or self.support_phone
+
+    def in_human_hours(self, at: datetime | None = None) -> bool:
+        hour = (at or now_ist()).astimezone(IST).hour
+        return self.human_hours[0] <= hour < self.human_hours[1]
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Tenant":
@@ -143,6 +186,9 @@ class Tenant:
             emergency_numbers=raw.get("emergency_numbers") or {},
             followup_hours=int(raw.get("followup_hours", 24)),
             technician_visit_cost_inr=int(raw.get("technician_visit_cost_inr", 0)),
+            care_numbers={str(k).lower(): str(v) for k, v in (raw.get("care_numbers") or {}).items()},
+            human_hours=tuple((raw.get("human_hours") or {}).get(k, d) for k, d in (("start", 9), ("end", 20))),
+            sla_hours=raw.get("sla_hours") or {},
         )
 
 

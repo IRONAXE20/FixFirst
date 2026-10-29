@@ -4,6 +4,7 @@
                                                                       and create (or update) the agent
   python -m fixfirst bolna-call +9198xxxxxxxx                         have the agent call a number
 """
+import json
 import re
 import secrets
 
@@ -30,8 +31,8 @@ SYSTEM_PROMPT = (f"{MARKER} call_ref={{execution_id}} from={{from_number}} to={{
 # end_call tool, FixFirst calls it itself after the goodbye (server.py), which doesn't depend on this check.
 HANGUP_PROMPT = (
     "You decide whether to end this phone call now. Answer Yes if EITHER is true:\n"
-    "1. The assistant's most recent message is a goodbye containing \"आपका दिन शुभ हो\", \"अलविदा\", "
-    "\"Have a nice day\" or \"goodbye\".\n"
+    "1. The assistant's most recent message is a goodbye containing \"Have a good day\", \"आपका दिन शुभ हो\", "
+    "\"अलविदा\", \"Have a nice day\" or \"goodbye\".\n"
     "2. The user's last line is a clear sign-off that ends the conversation: thanks plus goodbye, or declining "
     "more help, such as \"नहीं बस\", \"नहीं, धन्यवाद\", \"बस इतना ही\", \"ओके, थैंक यू, बाय\", \"bye\", "
     "\"no that's all, thanks\".\n"
@@ -58,9 +59,30 @@ def _set_env(name: str, value: str) -> None:
 
 
 def welcome(tenant: Tenant) -> str:
-    return (f"नमस्ते! मैं {tenant.agent_name}, {tenant.name} की FixFirst assistant। ये call आपकी service request में "
-            "मदद के लिए record हो सकती है। आप कभी भी 'technician' बोलेंगे तो मैं technician book कर दूँगी। "
-            "बताइए, किस appliance में problem है?")
+    # RentBasket's call script, 1. Greeting ("Namaste! Main Rentbasket ki FixFirst service assistant bol rahi hoon.
+    # Aapki kya madad kar sakti hoon?"); the caller's language decides the rest of the call.
+    return f"नमस्ते! मैं {tenant.name} की FixFirst service assistant बोल रही हूँ। आपकी क्या मदद कर सकती हूँ?"
+
+
+TRANSFER_TOOL = "transfer_call_care"
+
+
+def transfer_tools(tenant: Tenant) -> dict:
+    """Bolna's built-in transfer tool, to the customer care number (9am-8pm handoff). FixFirst calls it after
+    saying "Main aapko hamari service team se connect kar rahi hoon" (server.py); Bolna dials and bridges."""
+    return {
+        "tools": [{
+            "name": TRANSFER_TOOL, "key": "transfer_call",
+            "description": "Transfer the call to RentBasket's customer care team when the caller needs a person.",
+            "parameters": {"type": "object", "properties": {"call_sid": {"type": "string", "description": "unique call id"}},
+                           "required": ["call_sid"]},
+        }],
+        "tools_params": {
+            TRANSFER_TOOL: {"method": "POST", "url": None, "api_token": None,
+                            "param": json.dumps({"call_transfer_number": _e164(tenant.care_number()),
+                                                 "call_sid": "%(call_sid)s"})},
+        },
+    }
 
 
 def agent_payload(settings: Settings, tenant: Tenant, public_url: str, telephony: str) -> dict:
@@ -91,7 +113,7 @@ def agent_payload(settings: Settings, tenant: Tenant, public_url: str, telephony
                                     "stream": True, "endpointing": 800},
                     "input": {"provider": telephony, "format": "wav"},
                     "output": {"provider": telephony, "format": "wav"},
-                    "api_tools": None,
+                    "api_tools": transfer_tools(tenant),
                 },
                 "toolchain": {"execution": "parallel", "pipelines": [["transcriber", "llm", "synthesizer"]]},
                 "task_config": {

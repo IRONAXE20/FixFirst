@@ -7,7 +7,8 @@
 # Status: DRAFT. Needs sign-off from RentBasket's senior technician and legal before use
 # with real customers. Scripts are written for a female voice agent (Hindi verb forms).
 #
-# Placeholders: {national} {fire} {lpg} {callback_minutes} {company}
+# Placeholders: {national} {fire} {lpg} {company}. The URGENT callback (1 hour) is promised as
+# "जल्दी से जल्दी" / "as soon as possible", as in RentBasket's call script; the hour is for the team.
 #
 # `reminder` is the short, scripted answer when the caller asks what to do after the script was read
 # ("par AC to abhi on hai", "kya karun?"). It only repeats actions already in that hazard's script.
@@ -25,13 +26,12 @@ hazards:
       en: >-
         Please leave the room right now and keep everyone away from it. Call {national}, or the fire
         brigade on {fire}. Don't throw water on anything electrical. Only if the main switch is on your
-        way out, switch it off, but don't go back in. I'm marking this urgent, and our team will call
-        you within {callback_minutes} minutes.
+        way out, switch it off, but don't go back in. I'm marking this URGENT, and our team will call you as soon as possible.
       hi: >-
         कृपया अभी उस कमरे से बाहर निकल जाइए और सबको वहाँ से दूर रखिए। {national} पर, या fire brigade
         को {fire} पर call कीजिए। बिजली वाली किसी चीज़ पर पानी मत डालिए। अगर main switch बाहर निकलते
-        रास्ते में ही है तभी उसे बंद कीजिए, पर वापस अंदर मत जाइए। मैं इसे urgent mark कर रही हूँ,
-        हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+        रास्ते में ही है तभी उसे बंद कीजिए, पर वापस अंदर मत जाइए। मैं इसे URGENT mark कर रही हूँ,
+        हमारी team जल्दी से जल्दी आपको call करेगी।
 
   gas:
     label: Gas smell or LPG leak
@@ -44,14 +44,12 @@ hazards:
         This could be a gas leak, so please listen carefully. Do not switch any light, fan or appliance
         on or off, and do not light a match or a lighter. If you can reach it safely, turn the regulator
         knob on the gas cylinder to off. Open the doors and windows, and take everyone outside. Once you
-        are outside, call the LPG emergency number {lpg}. I'm marking this urgent, and our team will call
-        you within {callback_minutes} minutes.
+        are outside, call the LPG emergency number {lpg}. I'm marking this URGENT, and our team will call you as soon as possible.
       hi: >-
         ये gas leak हो सकता है, इसलिए ध्यान से सुनिए। कोई भी light, fan या appliance का switch ON या OFF
         मत कीजिए, और माचिस या lighter मत जलाइए। अगर आप safely पहुँच सकते हैं, तो cylinder का regulator
         knob बंद कर दीजिए। दरवाज़े और खिड़कियाँ खोल दीजिए और सबको बाहर ले जाइए। बाहर पहुँचकर LPG
-        emergency number {lpg} पर call कीजिए। मैं इसे urgent mark कर रही हूँ, हमारी team
-        {callback_minutes} मिनट के अंदर आपको call करेगी।
+        emergency number {lpg} पर call कीजिए। मैं इसे URGENT mark कर रही हूँ, हमारी team जल्दी से जल्दी आपको call करेगी।
 
   injury:
     label: Someone hurt, shocked or unconscious
@@ -62,11 +60,11 @@ hazards:
       en: >-
         If the person might still be touching the appliance or a wire, please don't touch them. Switch
         off the main power only if you can reach it safely. Call {national} for an ambulance right now.
-        I'm marking this urgent, and our team will call you within {callback_minutes} minutes.
+        I'm marking this URGENT, and our team will call you as soon as possible.
       hi: >-
         अगर वो इंसान अभी भी appliance या किसी तार को छू रहा हो सकता है, तो उन्हें मत छुइए। Main power
         तभी बंद कीजिए जब आप वहाँ safely पहुँच सकें। अभी {national} पर ambulance के लिए call कीजिए।
-        मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+        मैं इसे URGENT mark कर रही हूँ, हमारी team जल्दी से जल्दी आपको call करेगी।
 
   electrical:
     label: Sparks, shock, burning smell or smoke
@@ -78,14 +76,12 @@ hazards:
         Please stop using the appliance and don't touch it, its plug or its wires. If you can reach the
         main switch board without touching the appliance or any water, switch off the main switch. If you
         see smoke or flames, leave the room and call {national}. If anyone got a shock and feels unwell,
-        please see a doctor. I'm marking this urgent, and our team will call you within
-        {callback_minutes} minutes.
+        please see a doctor. I'm marking this URGENT, and our team will call you as soon as possible.
       hi: >-
         कृपया appliance का इस्तेमाल बंद कर दीजिए, और उसे, उसके plug या तारों को मत छुइए। अगर आप
         appliance या पानी को छुए बिना main switch board तक पहुँच सकते हैं, तो main switch बंद कर दीजिए।
         अगर धुआँ या आग दिखे तो कमरे से बाहर निकलिए और {national} पर call कीजिए। अगर किसी को करंट लगा
-        है और तबीयत ठीक नहीं लग रही, तो doctor को दिखाइए। मैं इसे urgent mark कर रही हूँ, हमारी team
-        {callback_minutes} मिनट के अंदर आपको call करेगी।
+        है और तबीयत ठीक नहीं लग रही, तो doctor को दिखाइए। मैं इसे URGENT mark कर रही हूँ, हमारी team जल्दी से जल्दी आपको call करेगी।
 
   battery:
     label: Inverter battery swelling, leaking, smell or heat
@@ -97,12 +93,11 @@ hazards:
       en: >-
         Please don't touch the battery, its terminals or its wires. Open a window to let fresh air in,
         keep children and pets away, and don't light any flame near it. Please don't switch anything on
-        or off near the battery. I'm marking this urgent, and our team will call you within
-        {callback_minutes} minutes.
+        or off near the battery. I'm marking this URGENT, and our team will call you as soon as possible.
       hi: >-
         कृपया battery, उसके terminals या तारों को मत छुइए। हवा आने के लिए खिड़की खोल दीजिए, बच्चों और
         pets को दूर रखिए, और उसके पास कोई आग मत जलाइए। Battery के पास कोई भी switch ON या OFF मत कीजिए।
-        मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+        मैं इसे URGENT mark कर रही हूँ, हमारी team जल्दी से जल्दी आपको call करेगी।
 
   water_electric:
     label: Water near plugs, sockets, wires or a running appliance
@@ -113,11 +108,11 @@ hazards:
       en: >-
         Please don't touch the appliance, its plug or the water, and don't try to unplug it with wet hands.
         If you can reach the main switch board without stepping in water, switch off the main switch.
-        I'm marking this urgent, and our team will call you within {callback_minutes} minutes.
+        I'm marking this URGENT, and our team will call you as soon as possible.
       hi: >-
         कृपया appliance, उसके plug या पानी को मत छुइए, और गीले हाथों से plug निकालने की कोशिश मत कीजिए।
         अगर आप पानी में पैर रखे बिना main switch board तक पहुँच सकते हैं, तो main switch बंद कर दीजिए।
-        मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट के अंदर आपको call करेगी।
+        मैं इसे URGENT mark कर रही हूँ, हमारी team जल्दी से जल्दी आपको call करेगी।
 
   # RentBasket SOP 3.1 / 8.4: stop-use faults reached only through playbook answers (no lexicon):
   # damaged microwave door, washer moving violently or flooding, chemical (refrigerant) smell,
@@ -131,12 +126,11 @@ hazards:
       en: >-
         For safety, please stop using the appliance now. Don't open it, and don't touch any wet or damaged
         electrical part. If it's safe to reach, switch it off at the wall switch; if it isn't safe, just
-        move away from it. I'm marking this urgent, and our team will call you within {callback_minutes} minutes.
+        move away from it. I'm marking this URGENT, and our team will call you as soon as possible.
       hi: >-
         Safety के लिए, कृपया अभी appliance का इस्तेमाल बंद कर दीजिए। उसे मत खोलिए, और किसी गीले या खराब
         बिजली वाले हिस्से को मत छुइए। अगर wall switch तक safely पहुँच सकते हैं तो उसे बंद कर दीजिए; अगर safe
-        नहीं है, तो बस उससे दूर हो जाइए। मैं इसे urgent mark कर रही हूँ, हमारी team {callback_minutes} मिनट
-        के अंदर आपको call करेगी।
+        नहीं है, तो बस उससे दूर हो जाइए। मैं इसे URGENT mark कर रही हूँ, हमारी team जल्दी से जल्दी आपको call करेगी।
 
 # ---------------------------------------------------------------------------------------
 # Lexicon. Text is lower-cased and punctuation becomes clause breaks before matching.

@@ -118,8 +118,9 @@ def _side_effects(before: dict, session) -> bool:
 
 
 class BolnaBridge:
-    def __init__(self, *, store, brain_for, sync_customer, tenant):
+    def __init__(self, *, store, brain_for, sync_customer, tenant, test_callers: dict | None = None):
         self.store = store
+        self.test_callers = test_callers or {}   # your own numbers -> a demo customer id (TEST_CALLERS)
         self.brain_for = brain_for
         self.sync_customer = sync_customer   # async (phone) -> local customer id or None
         self.tenant = tenant
@@ -171,13 +172,25 @@ class BolnaBridge:
             call.last_speech = result.speech
             return result.speech
 
-    def call_ends(self, messages: list[dict]) -> bool:
-        """After this reply, should the call end? Yes once the caller is done and the goodbye was said."""
+    def _session_of(self, messages: list[dict]):
         system = next((_text(m.get("content")) for m in messages if m.get("role") == "system"), "")
         convo = [m for m in messages if m.get("role") in ("user", "assistant")]
         call = self.calls.get(call_vars(system).get("call_ref") or self._fallback_key(convo))
-        session = self.store.get(call.session_id) if call else None
+        return self.store.get(call.session_id) if call else None
+
+    def call_ends(self, messages: list[dict]) -> bool:
+        """After this reply, should the call end? Yes once the caller is done and the goodbye was said."""
+        session = self._session_of(messages)
         return bool(session and session.end_requested)
+
+    def call_transfers(self, messages: list[dict]) -> bool:
+        """After this reply, should Bolna transfer the call to a person (handoff in human hours)? Asked once."""
+        session = self._session_of(messages)
+        if session and session.transfer_requested:
+            session.transfer_requested = False
+            session.publish("transfer")
+            return True
+        return False
 
     def side_check(self, system: str, messages: list[dict]) -> str:
         """Bolna's hangup-using-a-prompt check (hangup_after_LLMCall) asks after each reply whether to end the
@@ -220,7 +233,11 @@ class BolnaBridge:
         execution_id, hook_phones, prefetched = ((cv.get("call_ref"), [], None) if cv.get("call_ref")
                                                  else self._claim_pending())
         phones = [p for p in (cv.get("customer_phone"), cv.get("from"), cv.get("to"), *hook_phones) if mobile10(p)]
-        if prefetched and not cv.get("customer_phone"):
+        test_as = next((self.test_callers[mobile10(p)] for p in phones if mobile10(p) in self.test_callers), None)
+        if test_as:   # TEST_CALLERS: your own number calls in as a demo customer; nothing goes to real customers
+            customer_id, caller = test_as, next(p for p in phones if mobile10(p) in self.test_callers)
+            self._claimed_test = True
+        elif prefetched and not cv.get("customer_phone"):
             customer_id, caller = await prefetched   # started when Bolna's webhook announced the call
         else:
             customer_id, caller = await self._lookup(phones)
@@ -344,18 +361,31 @@ def sse_chunks(speech: str, model: str, end_tool: str | None = None):
     yield "data: [DONE]\n\n"
 
 
-def end_call_tool(body: dict) -> str | None:
-    """The name of the end-call tool Bolna offered in this request ("end_call..."), if any."""
+def _offered_tool(body: dict, prefix: str) -> str | None:
     for t in body.get("tools") or []:
         name = ((t or {}).get("function") or {}).get("name") or ""
-        if name.startswith("end_call"):
+        if name.startswith(prefix):
             return name
     return None
 
 
+def end_call_tool(body: dict) -> str | None:
+    """The name of the end-call tool Bolna offered in this request ("end_call..."), if any."""
+    return _offered_tool(body, "end_call")
+
+
+def transfer_call_tool(body: dict) -> str | None:
+    """The name of the transfer tool bolna-setup put on the agent ("transfer_call..."), if Bolna offered it."""
+    return _offered_tool(body, "transfer_call")
+
+
 def _end_call(name: str, index: int | None = None) -> dict:
+    """Our call of one of Bolna's own tools: end_call after the goodbye, or transfer_call after "connecting you"
+    (Bolna fills the call id and the care number from the tool's settings)."""
+    args = ({"call_sid": "", "reason": "The caller needs a person"} if name.startswith("transfer_call")
+            else {"reason": "The caller is done and heard the goodbye"})
     tc = {"id": f"call_{uuid.uuid4().hex[:12]}", "type": "function",
-          "function": {"name": name, "arguments": json.dumps({"reason": "The caller is done and heard the goodbye"})}}
+          "function": {"name": name, "arguments": json.dumps(args)}}
     return {"index": index, **tc} if index is not None else tc
 
 

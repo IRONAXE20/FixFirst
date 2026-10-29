@@ -2,8 +2,8 @@
 from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer, LargeBinary, MetaData, String, Table, Text,
-                        create_engine, select)
+from sqlalchemy import (JSON, Boolean, Column, DateTime, ForeignKey, Integer, LargeBinary, MetaData, String, Table,
+                        Text, create_engine, inspect, select, text)
 from sqlalchemy.engine import Engine
 from sqlalchemy.schema import CreateSchema
 
@@ -21,6 +21,9 @@ customers = Table(
     Column("area", String(120)),
     Column("address", String(300)),
     Column("created_at", DateTime, default=now_utc),
+    # The customer's one persistent photo-and-notes link (/u/<token>); replaced when the mobile number changes
+    # (a new number is a new customer id) and cleared when no rental is left.
+    Column("link_token", String(40), unique=True),
 )
 
 rentals = Table(
@@ -64,12 +67,27 @@ tickets = Table(
     Column("rental_id", String(32)),
     Column("priority", String(8), nullable=False),     # urgent | normal
     Column("category", String(24), nullable=False),    # safety | technician | system
-    Column("status", String(16), nullable=False, default="open"),   # open | assigned | closed
+    Column("status", String(24), nullable=False, default="TICKET_RAISED"),   # tickets.STATES
     Column("summary", JSON, nullable=False),
     Column("photo_token", String(40), unique=True),
     Column("photos", JSON, default=list),
     Column("created_at", DateTime, nullable=False),
     Column("updated_at", DateTime, nullable=False),
+    # RentBasket ecosystem (29 Oct 2026): the KB issue, the channel that raised the ticket (never changes),
+    # the channels it has used since (an outbound WhatsApp counts even without a reply), possible misuse.
+    Column("issue_id", String(16)),
+    Column("origin_channel", String(12)),                 # voice | whatsapp
+    Column("channels_used", String(16)),                  # voice_only | whatsapp_only | both
+    Column("audit_required", Boolean, default=False),
+)
+
+# A number that isn't on any RentBasket deal, linked to the account holder after an OTP to their number.
+linked_numbers = Table(
+    "linked_numbers", metadata,
+    Column("phone", String(20), primary_key=True),        # last 10 digits
+    Column("customer_id", String(32), nullable=False, index=True),
+    Column("holder_phone", String(20)),
+    Column("linked_at", DateTime, nullable=False),
 )
 
 outbox = Table(
@@ -147,7 +165,36 @@ def get_engine(url: str | None = None) -> Engine:
             c.execute(CreateSchema(PG_SCHEMA, if_not_exists=True))
         engine = engine.execution_options(schema_translate_map={None: PG_SCHEMA})
     metadata.create_all(engine)
+    _migrate(engine, url)
     return engine
+
+
+# Columns added after the first deploy: create_all() makes missing tables but never alters existing ones.
+_ADDED = {
+    "customers": [("link_token", "VARCHAR(40)")],
+    "tickets": [("issue_id", "VARCHAR(16)"), ("origin_channel", "VARCHAR(12)"), ("channels_used", "VARCHAR(16)"),
+                ("audit_required", "BOOLEAN DEFAULT FALSE")],
+}
+# Ticket statuses before the RentBasket lifecycle.
+_OLD_STATUS = {"open": "TICKET_RAISED", "assigned": "SCHEDULED", "closed": "CLOSED"}
+
+
+def _migrate(engine: Engine, url: str) -> None:
+    pg = not url.startswith("sqlite")
+    prefix = f"{PG_SCHEMA}." if pg else ""
+    insp = inspect(engine.execution_options(schema_translate_map=None) if pg else engine)
+    with engine.begin() as c:
+        for table, cols in _ADDED.items():
+            have = {col["name"] for col in insp.get_columns(table, schema=PG_SCHEMA if pg else None)}
+            for name, ddl in cols:
+                if name not in have:
+                    c.execute(text(f"ALTER TABLE {prefix}{table} ADD COLUMN {name} {ddl}"))
+        if pg:   # "SELF_FIX_IN_PROGRESS" doesn't fit the old VARCHAR(16)
+            c.execute(text(f"ALTER TABLE {prefix}tickets ALTER COLUMN status TYPE VARCHAR(24)"))
+        for old, new in _OLD_STATUS.items():
+            c.execute(text(f"UPDATE {prefix}tickets SET status = :new WHERE status = :old"), {"new": new, "old": old})
+        c.execute(text(f"UPDATE {prefix}tickets SET status = 'URGENT' WHERE status = 'TICKET_RAISED' "
+                       f"AND priority = 'urgent' AND origin_channel IS NULL"))
 
 
 def row(r) -> dict | None:
@@ -168,6 +215,27 @@ def fetch_customer_by_phone(engine: Engine, phone: str) -> dict | None:
             if "".join(ch for ch in r.phone if ch.isdigit()).endswith(digits):
                 return row(r)
     return None
+
+
+def _mobile(phone: str | None) -> str:
+    return "".join(ch for ch in phone or "" if ch.isdigit())[-10:]
+
+
+def linked_customer(engine: Engine, phone: str | None) -> str | None:
+    """The account a non-registered number was linked to by OTP, if any."""
+    digits = _mobile(phone)
+    if not digits:
+        return None
+    with engine.connect() as c:
+        return c.execute(select(linked_numbers.c.customer_id).where(linked_numbers.c.phone == digits)).scalar()
+
+
+def link_number(engine: Engine, phone: str, customer_id: str, holder_phone: str | None) -> None:
+    digits = _mobile(phone)
+    with engine.begin() as c:
+        c.execute(linked_numbers.delete().where(linked_numbers.c.phone == digits))
+        c.execute(linked_numbers.insert().values(phone=digits, customer_id=customer_id,
+                                                 holder_phone=_mobile(holder_phone) or None, linked_at=now_utc()))
 
 
 def fetch_rentals(engine: Engine, customer_id: str) -> list[dict]:

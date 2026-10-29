@@ -44,20 +44,30 @@ class WhatsApp:
 
     async def send(self, to: str | None, audience: str, kind: str, body: str,
                    ticket_code: str | None = None, call_id: str | None = None) -> str:
+        """A v1 template with the whole message as its one variable (fixfirst_customer_update / _team_ticket)."""
+        template = self.s.whatsapp_template_team if audience == "team" else self.s.whatsapp_template_customer
+        return await self.send_template(to, audience, kind, template, [body], preview=body,
+                                        ticket_code=ticket_code, call_id=call_id)
+
+    async def send_template(self, to: str | None, audience: str, kind: str, template: str, params: list[str], *,
+                            preview: str, button_param: str | None = None, ticket_code: str | None = None,
+                            call_id: str | None = None) -> str:
+        """Send an approved template: `params` fill its body {{1}}, {{2}}…; `button_param` is the dynamic suffix
+        of its first URL button (T1's photo link, T10a's code). `preview` is what the outbox and /ops show."""
         status, error = "dry_run", None
         if not to:
             status = "no_recipient"
         elif self.live:
-            template = self.s.whatsapp_template_team if audience == "team" else self.s.whatsapp_template_customer
+            components = [{"type": "body", "parameters": [{"type": "text", "text": template_param(p)} for p in params]}]
+            if button_param is not None:
+                components.append({"type": "button", "sub_type": "url", "index": "0",
+                                   "parameters": [{"type": "text", "text": button_param}]})
             payload = {
                 "messaging_product": "whatsapp",
                 "to": to_e164_digits(to),
                 "type": "template",
-                "template": {
-                    "name": template,
-                    "language": {"code": self.s.whatsapp_template_lang},
-                    "components": [{"type": "body", "parameters": [{"type": "text", "text": template_param(body)}]}],
-                },
+                "template": {"name": template, "language": {"code": self.s.whatsapp_template_lang},
+                             "components": components},
             }
             try:
                 async with httpx.AsyncClient(timeout=20) as client:
@@ -71,7 +81,7 @@ class WhatsApp:
             if error:
                 logger.warning(f"WhatsApp send to {mask(to)} failed: {error}")
         with self.engine.begin() as c:
-            c.execute(insert(outbox).values(to=to, audience=audience, kind=kind, body=body, status=status,
+            c.execute(insert(outbox).values(to=to, audience=audience, kind=kind, body=preview, status=status,
                                             error=error, ticket_code=ticket_code, call_id=call_id,
                                             created_at=now_utc()))
         return status

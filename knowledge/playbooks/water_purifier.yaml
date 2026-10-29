@@ -9,8 +9,8 @@ triage_node: triage
 nodes:
   triage:
     say:
-      en: "Please tell me what's wrong with the water purifier."
-      hi: "बताइए, water purifier में क्या problem है?"
+      en: "Please tell me a little about the problem. What's happening with the water purifier?"
+      hi: "Water purifier की problem थोड़ा बता दीजिए, क्या हो रहा है?"
     outcomes:
       leak: {next: esc_wp01, label: "WP-01 Water leakage (paani leak ho raha hai, purifier se paani gir raha hai)"}
       purification: {next: esc_wp02, label: "WP-02 Water purification issue (paani ka taste kharab, water not clean, TDS high)"}
@@ -32,5 +32,6 @@ nodes:
     technician_note: "Check power, pump and water supply."
   esc_other:
     kind: escalate
+    handoff: true
     likely_cause: "Water purifier issue not in the RentBasket KB (see the caller's words)"
     technician_note: "Call the customer to understand the problem before the visit."

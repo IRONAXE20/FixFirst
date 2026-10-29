@@ -32,8 +32,8 @@ def env(tmp_path):
     tickets = TicketService(engine, WhatsApp(settings, engine), tenant, settings)
     store = SessionStore(engine, tenant)
 
-    def make(responses, customer="C1", language=None):
-        session = store.create(channel="text", customer_id=customer)
+    def make(responses, customer="C1", language=None, channel="text", phone=None):
+        session = store.create(channel=channel, customer_id=customer, caller_phone=phone)
         if language:
             session.language = language
         llm = ScriptedLLM(responses)

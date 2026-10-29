@@ -3,6 +3,9 @@ import { api, esc, ms, timeAgo, outcomeBadge, initChrome, LOGO, APPLIANCE_ICON }
 const $ = (id) => document.getElementById(id);
 $("logo").innerHTML = LOGO;
 const state = { tab: "tickets", open: null, data: { tickets: [], calls: [], outbox: [] } };
+let STATES = ["NEW", "SELF_FIX_IN_PROGRESS", "RESOLVED_REMOTE", "TICKET_RAISED", "URGENT", "SCHEDULED", "IN_PROGRESS",
+  "FIXED", "REPLACED", "AUDIT_REVIEW", "CLOSED", "REOPENED"];
+api("/api/ticket-states").then((s) => { STATES = s; }).catch(() => {});
 
 const hash = location.hash.slice(1);
 if (hash.startsWith("call-")) { state.tab = "calls"; state.open = hash.slice(5); }
@@ -47,8 +50,10 @@ function render() {
 }
 
 function priorityBadge(t) {
-  if (t.priority === "urgent") return `<span class="badge bad">URGENT</span>`;
-  return `<span class="badge ${t.category === "system" ? "warn" : "info"}">${t.category === "system" ? "System" : "Normal"}</span>`;
+  const audit = t.audit_required ? ` <span class="badge warn" title="Possible misuse: Auditing team">Audit</span>` : "";
+  if (t.priority === "urgent") return `<span class="badge bad">URGENT</span>${audit}`;
+  const label = { system: "System", selffix: "Self-fix", handoff: "Handoff" }[t.category] || "Normal";
+  return `<span class="badge ${t.category === "system" ? "warn" : "info"}">${label}</span>${audit}`;
 }
 
 function renderTickets() {
@@ -62,7 +67,8 @@ function renderTickets() {
         <td>${esc(s.customer?.name || "Unknown")}<div class="muted small">${esc(s.customer?.area || s.customer?.phone || "")}</div></td>
         <td>${APPLIANCE_ICON[s.appliance] || ""} ${esc(s.appliance_label || s.appliance || "–")}${s.brand ? `<div class="muted small">${esc(s.brand)}</div>` : ""}</td>
         <td>${esc(s.likely_cause)}</td>
-        <td><select class="status" data-code="${esc(t.code)}">${["open", "assigned", "closed"].map((v) => `<option ${v === t.status ? "selected" : ""}>${v}</option>`).join("")}</select></td>
+        <td><select class="status" data-code="${esc(t.code)}">${STATES.map((v) => `<option ${v === t.status ? "selected" : ""}>${v}</option>`).join("")}</select>
+          <div class="muted small">${esc(t.origin_channel || "voice")} · ${esc((t.channels_used || "voice_only").replace("_", " "))}</div></td>
         <td class="muted small">${timeAgo(t.created_at)}</td></tr>
         ${open ? `<tr class="detail-row"><td colspan="7">${ticketDetail(t)}</td></tr>` : ""}`;
     }).join("")}</tbody></table>`;
@@ -83,6 +89,9 @@ function ticketDetail(t) {
         ${s.hazard ? `<dt>Hazard</dt><dd><span class="badge bad">${esc(s.hazard)}</span></dd>` : ""}
         ${s.reason ? `<dt>Caller said</dt><dd>${esc(s.reason)}</dd>` : ""}
         ${(s.notes || []).map((n) => `<dt>Also</dt><dd>${esc(n)}</dd>`).join("")}
+        ${(s.customer_notes || []).map((n) => `<dt>Customer wrote</dt><dd>${esc(n.note)}</dd>`).join("")}
+        ${s.sla_hours ? `<dt>SLA</dt><dd>agree a visit within ${esc(s.sla_hours)} h</dd>` : ""}
+        ${(s.reopened || []).length ? `<dt>Reopened</dt><dd>${s.reopened.length}× · ${esc(s.reopened.at(-1).likely_cause)}</dd>` : ""}
         <dt>Address</dt><dd>${esc(s.customer?.address || "–")} · ${esc(s.customer?.phone || "")}</dd>
         <dt>Playbook</dt><dd>${esc(s.playbook || "–")} ${s.playbook_status && s.playbook_status !== "reviewed" ? `<span class="badge warn">draft</span>` : ""}</dd>
       </dl>

@@ -1,7 +1,8 @@
 # Microwave (Haier / Panasonic / Midea): RentBasket Service Knowledge Base v1, MW-01 to MW-04.
-# MW-01 (sparking and noise) is a stop-use safety case with an URGENT ticket; MW-02 and MW-03 are always a
-# ticket (the customer must never open it); MW-04 (bad smell, inside not cleaned) is the KB's self-fix.
-# The spoken wording still needs RentBasket's sign-off.
+# MW-01 (sparking or loud noise) is a stop-use safety case with an URGENT ticket; MW-02 and MW-03 are always a
+# ticket (the customer must never open it); MW-04 (bad smell, inside not cleaned) is the KB's self-fix, which
+# starts with "are you near the microwave?" (if not, the steps go on WhatsApp, template T2). An issue the KB
+# doesn't list goes to a person. The spoken wording still needs RentBasket's sign-off.
 id: microwave_problem
 appliance: microwave
 title: {en: "Microwave problem (RentBasket KB MW-01 to MW-04)", hi: "Microwave की problem (RentBasket KB MW-01 से MW-04)"}
@@ -12,8 +13,8 @@ triage_node: triage
 nodes:
   triage:
     say:
-      en: "Please tell me what's wrong with the microwave."
-      hi: "बताइए, microwave में क्या problem है?"
+      en: "Please tell me a little about the problem. What's happening with the microwave?"
+      hi: "Microwave की problem थोड़ा बता दीजिए, क्या हो रहा है?"
     outcomes:
       sparking_noise: {hazard: stop_use, label: "MW-01 Sparking and noise (sparking, chingari, awaaz aa rahi hai, loud noise)"}
       not_heating: {next: esc_mw02, label: "MW-02 Not heating (garam nahi kar raha, not heating, food stays cold)"}
@@ -29,13 +30,22 @@ nodes:
       hi: "क्या smell किसी चीज़ के जलने जैसी है, या पुराने खाने जैसी?"
     outcomes:
       burning: {hazard: stop_use, label: "Like burning (treated as MW-01)"}
-      food: {next: mw04_unplug, label: "Like old food"}
+      food: {next: mw04_near, label: "Like old food"}
+    sources: [rentbasket_kb]
+
+  mw04_near:
+    say:
+      en: "That usually means the inside needs a clean, which you can do at home. I'll take you through it step by step. Are you near the microwave right now?"
+      hi: "इसका मतलब आमतौर पर अंदर सफ़ाई की ज़रूरत है, जो घर पर ही हो जाती है। मैं आपको step by step बताती हूँ। क्या आप अभी microwave के पास हैं?"
+    outcomes:
+      near: {next: mw04_unplug, label: "Yes, near the microwave now"}
+      not_near: {next: steps_on_whatsapp, label: "Not near it, or would rather do it later"}
     sources: [rentbasket_kb]
 
   mw04_unplug:
     say:
-      en: "That usually means the inside needs a clean. Please switch off the microwave and unplug it. Tell me when done."
-      hi: "इसका मतलब आमतौर पर अंदर सफ़ाई की ज़रूरत है। कृपया microwave बंद कीजिए और उसका plug निकाल दीजिए। हो जाए तो बताइए।"
+      en: "First, please switch off the microwave and unplug it. Tell me when done."
+      hi: "पहले microwave बंद कीजिए और उसका plug निकाल दीजिए। हो जाए तो बताइए।"
     outcomes:
       done: {next: mw04_wipe, label: "Switched off and unplugged"}
       cant_do: {next: esc_mw04, label: "Can't do it"}
@@ -43,12 +53,12 @@ nodes:
 
   mw04_wipe:
     say:
-      en: "Now wipe the inside walls, the door and the turntable with a damp cloth. If you like, you can also heat a bowl of water with some lemon for three minutes and wipe again. Did it work? Is the smell gone?"
-      hi: "अब अंदर की दीवारें, door और घूमने वाली plate गीले कपड़े से पोंछ दीजिए। चाहें तो एक bowl पानी में नींबू डाल कर तीन मिनट गरम कीजिए और फिर से पोंछ लीजिए। क्या इससे ठीक हुआ? क्या smell चली गई?"
+      en: "Now wipe the inside walls, the door and the turntable with a damp cloth. If you like, you can also heat a bowl of water with some lemon for three minutes and wipe again. Is it fine now? Is the smell gone?"
+      hi: "अब अंदर की दीवारें, door और घूमने वाली plate गीले कपड़े से पोंछ दीजिए। चाहें तो एक bowl पानी में नींबू डाल कर तीन मिनट गरम कीजिए और फिर से पोंछ लीजिए। क्या अब ठीक है? smell चली गई?"
     outcomes:
       fixed: {next: resolved, label: "Yes, the smell is gone"}
       not_fixed: {next: esc_mw04, label: "No, it still smells"}
-      later: {next: followup, label: "Will clean it later"}
+      later: {next: steps_on_whatsapp, label: "Will clean it later"}
     sources: [rentbasket_kb]
 
   # ---- endings -----------------------------------------------------------------------
@@ -56,14 +66,15 @@ nodes:
     kind: resolve
     resolution: fixed_on_call
     say:
-      en: "Great, the microwave is fine again. If the problem comes back, please call us."
-      hi: "बहुत बढ़िया, microwave फिर से ठीक है। अगर problem फिर आए, तो हमें call कीजिए।"
-  followup:
+      en: "Great! I'm closing the ticket. We'll check with you on WhatsApp tomorrow."
+      hi: "बहुत बढ़िया! मैं ticket close कर रही हूँ। कल हम WhatsApp पर check करेंगे।"
+  steps_on_whatsapp:
     kind: followup
-    followup_minutes: 60
+    followup_minutes: 1440
+    whatsapp: MW-04
     say:
-      en: "No problem. I'll message you on WhatsApp in about an hour. If it still smells after cleaning, just reply and I'll raise a ticket."
-      hi: "कोई बात नहीं। मैं लगभग एक घंटे में WhatsApp पर message करूँगी। अगर साफ़ करने के बाद भी smell आए, तो बस reply कर दीजिए, मैं ticket raise कर दूँगी।"
+      en: "I'm sending you these steps on WhatsApp. When it's done, just tap 'Yes' there."
+      hi: "मैं ये steps आपको WhatsApp पर भेज रही हूँ। काम हो जाए तो वहाँ 'Yes' दबा दीजिए।"
 
   esc_mw02:
     kind: escalate
@@ -85,5 +96,6 @@ nodes:
     technician_note: "Check for burnt residue or an electrical smell."
   esc_other:
     kind: escalate
+    handoff: true
     likely_cause: "Microwave issue not in the RentBasket KB (see the caller's words)"
     technician_note: "Call the customer to understand the problem before the visit."

@@ -66,7 +66,7 @@ def test_typed_call_to_ticket_with_photo(client):
     assert client.get("/api/tickets").json()[0]["photos"]
     assert client.post(f"/api/upload/{ticket['photo_token']}", files={"file": ("x.txt", b"hi", "text/plain")}).status_code == 400
 
-    assert client.patch(f"/api/tickets/{ticket['code']}", json={"status": "assigned"}).json()["status"] == "assigned"
+    assert client.patch(f"/api/tickets/{ticket['code']}", json={"status": "SCHEDULED"}).json()["status"] == "SCHEDULED"
     stats = client.get("/api/stats").json()
     assert stats["escalated"] == 1 and stats["open_tickets"] == 1
     kinds = {m["audience"] for m in client.get("/api/outbox").json()}
@@ -102,7 +102,7 @@ def test_photos_live_in_the_database_and_go_7_days_after_the_ticket_closes(clien
     assert url.startswith("/media/p/") and client.get(url).content == PNG
     engine = get_engine(client.db_url)
     assert photo_store.purge(engine, 7) == 0                      # ticket still open: kept
-    client.patch(f"/api/tickets/{ticket['code']}", json={"status": "closed"})
+    client.patch(f"/api/tickets/{ticket['code']}", json={"status": "CLOSED"})
     assert photo_store.purge(engine, 7) == 0                      # closed today: inside the 7-day buffer
     with engine.begin() as c:
         c.execute(update(tickets).where(tickets.c.code == ticket["code"]).values(updated_at=now_utc() - timedelta(days=8)))
@@ -173,3 +173,25 @@ def test_import_retires_playbooks_that_no_longer_have_a_file(tmp_path):
     assert "tv_problem" not in library.playbooks
     with engine.connect() as c:
         assert "tv_problem" not in {r.id for r in c.execute(select(playbook_docs.c.id))}
+
+
+def test_customer_link_lists_open_tickets_takes_notes_and_asks_which_ticket(client):
+    from sqlalchemy import select
+
+    from fixfirst.db import customers, get_engine
+    for text in ("my fridge is broken", "my washing machine is broken"):
+        client.scripts["responses"].append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", language="en")]))
+        sid = client.post("/api/sessions", json={"customer_id": "C1", "mode": "text", "language": "en"}).json()["session_id"]
+        client.post(f"/api/sessions/{sid}/text", json={"text": text})
+    with get_engine(client.db_url).connect() as c:
+        token = c.execute(select(customers.c.link_token).where(customers.c.id == "C1")).scalar()
+    info = client.get(f"/api/upload/{token}").json()
+    assert info["persistent"] and len(info["tickets"]) == 2 and info["name"] == "Ananya Sharma"
+    # Two open tickets: the customer has to pick one.
+    assert client.post(f"/api/upload/{token}/note", json={"note": "it smells too"}).status_code == 400
+    code = info["tickets"][0]["code"]
+    assert client.post(f"/api/upload/{token}/note", json={"note": "it smells too", "ticket": code}).json()["ticket"] == code
+    up = client.post(f"/api/upload/{token}", data={"ticket": code}, files={"file": ("p.png", PNG, "image/png")})
+    assert up.status_code == 200 and up.json()["ticket"] == code
+    t = next(t for t in client.get("/api/tickets").json() if t["code"] == code)
+    assert t["summary"]["customer_notes"][0]["note"] == "it smells too" and t["photos"]

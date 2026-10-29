@@ -12,9 +12,23 @@ support_phone: "+91 99588 58473"
 # Who receives ticket summaries on WhatsApp (international format, no "+").
 # ASK: the service desk / technician group numbers. Empty = messages only go to the outbox.
 team_whatsapp: []
-# ASK: a named on-call owner for urgent safety tickets, and the callback promise.
+# ASK: a named on-call owner for urgent safety tickets.
 on_call_name: "Service desk (set a named on-call owner)"
-urgent_callback_minutes: 15
+# RentBasket ecosystem SLA (29 Oct 2026): URGENT = callback within 1 hour plus a same-day visit. The agent
+# says "हमारी team जल्दी से जल्दी call करेगी"; the hour is for the team (ticket and WhatsApp to the team).
+urgent_callback_minutes: 60
+
+# Customer care number in the WhatsApp templates (T1, T4, T5, T7): care_number = lookup(customer.city or
+# service area). One number for every city for now; add a row per city if the numbers split.
+care_numbers:
+  default: "+91 9958187021"
+
+# Live handoff to a person: 9am to 8pm IST. Outside these hours the agent raises the ticket and promises a
+# callback after 9am.
+human_hours: {start: 9, end: 20}
+
+# Time to agree a visit after a ticket is raised.
+sla_hours: {appliance: 24, furniture: 48}
 
 # What the agent may promise for a normal ticket: the RentBasket KB's own ticket reply. It names no day
 # or time; never promise one until dispatch confirms it.

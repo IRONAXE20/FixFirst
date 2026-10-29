@@ -7,7 +7,9 @@ Order of a turn:
   3. The server executes the tool. Instructions come only from playbook scripts, spoken
      word for word; the LLM's own words pass through the unsafe-instruction guard.
 """
+import asyncio
 import re
+import secrets
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -15,7 +17,8 @@ from difflib import SequenceMatcher
 
 from loguru import logger
 
-from .config import Settings, Tenant
+from .config import Settings, Tenant, now_ist
+from .db import fetch_customer, fetch_customer_by_phone, fetch_rentals, link_number
 from .knowledge import DocLibrary
 from .llm import ChatModel, LLMError, LLMResult, ToolCall
 from .playbooks import Node, PlaybookError, PlaybookLibrary, PlaybookRun
@@ -35,7 +38,6 @@ QUOTE_MIN_WORDS = 2
 _TECH_REQUEST = [re.compile(p) for p in (
     r"\b(send|book|need|want|get|arrange|call)\b.{0,25}\b(technician|technicion|mechanic|engineer|someone|somebody|a person|a human|repair ?man|service ?man|mistri)\b",
     r"\b(technician|technicion|mechanic|engineer|mistri|aadmi|banda|bande|insaan|service wala|kisi ko)\b.{0,25}\b(bhej\w*|bulao|bulaiye|bula do|bulwa\w*|chahiye|book kar\w*|bhijwa\w*)",
-    r"\b(talk|speak) to (a |an )?(human|person|agent|someone|executive)\b",
     r"(टेक्नीशियन|मैकेनिक|मिस्त्री|आदमी|किसी को).{0,20}(भेज|बुला|चाहिए)",
 )]
 _TECH_NOT = re.compile(r"\b(nahi|nahin|don'?t|do not|no need|not|agar|if|otherwise|warna)\b|नहीं|अगर")
@@ -105,6 +107,55 @@ def caller_is_done(text: str) -> bool:
     """After "anything else?": a short no / thanks / bye, with no new appliance or problem in it."""
     t = text.lower().strip()
     return len(t.split()) <= 8 and bool(_DONE.search(t) or _DONE_NO.search(t)) and not _MORE.search(t)
+
+
+# "Talk to a person" is a human handoff (RentBasket ecosystem), not a technician visit.
+_HUMAN_REQUEST = [re.compile(p) for p in (
+    r"\b(talk|speak|connect|transfer)\b.{0,15}\b(human|person|agent|someone|somebody|executive|manager|customer care|"
+    r"real person|representative|staff)\b",
+    r"\b(insaan|insan|manager|customer care|executive|staff|kisi aadmi|kisi insaan|real person|kisi se)\b.{0,20}"
+    r"\b(baat|connect|transfer|mila\w*)",
+    r"(इंसान|मैनेजर|कस्टमर केयर|किसी से|किसी आदमी).{0,20}(बात|connect|मिला)",
+)]
+
+
+def human_requested(text: str) -> bool:
+    for clause in re.split(r"[.,!?;।]| but | par | lekin ", text.lower()):
+        if any(rx.search(clause) for rx in _HUMAN_REQUEST) and not _TECH_NOT.search(clause):
+            return True
+    return False
+
+
+_AFFIRM = re.compile(r"\b(haan|han|ha|haa|ji|jee|yes|yeah|yep|sahi|bilkul|correct|right|wahi|wohi|usi|same|theek|thik|ok|okay)\b"
+                     r"|हाँ|हां|जी|सही|बिल्कुल|वही|उसी|ठीक")
+_DENY = re.compile(r"^\W*(no|nope|nahi|nahin|nai|na|galat|wrong)\b|^\W*(नहीं|नही|ना|गलत)|\b(dusra|doosra|dusre|other one|another)\b|दूसर")
+_DIGIT_WORDS = {"zero": "0", "shunya": "0", "sunya": "0", "one": "1", "ek": "1", "two": "2", "do": "2", "three": "3",
+                "teen": "3", "four": "4", "char": "4", "chaar": "4", "five": "5", "paanch": "5", "panch": "5", "six": "6",
+                "chhe": "6", "che": "6", "chhah": "6", "seven": "7", "saat": "7", "eight": "8", "aath": "8", "nine": "9",
+                "nau": "9", "शून्य": "0", "एक": "1", "दो": "2", "तीन": "3", "चार": "4", "पांच": "5", "पाँच": "5",
+                "छह": "6", "छः": "6", "सात": "7", "आठ": "8", "नौ": "9"}
+
+
+def spoken_digits(text: str) -> str:
+    """Digits in what speech-to-text heard, spoken words included ("nau aath 1 0 ..." -> "9810...")."""
+    out = []
+    for tok in re.findall(r"[0-9]+|[a-z]+|[ऀ-ॿ]+", text.lower()):
+        if tok.isdigit():
+            out.append(tok)
+        elif tok in _DIGIT_WORDS:
+            out.append(_DIGIT_WORDS[tok])
+    return "".join(out)
+
+
+def phone_in(text: str) -> str | None:
+    digits = spoken_digits(text)
+    digits = digits[2:] if len(digits) == 12 and digits.startswith("91") else digits
+    return digits[-10:] if len(digits) >= 10 and digits[-10] in "6789" else None
+
+
+def otp_in(text: str) -> str | None:
+    digits = spoken_digits(text)
+    return digits if 4 <= len(digits) <= 6 else None
 
 
 def technician_requested(text: str) -> bool:
@@ -230,35 +281,110 @@ def _is_safety_question(node: Node) -> bool:
 
 PHRASES = {
     "greeting": {
-        "hi": "नमस्ते{name}! मैं {agent}, {company} की FixFirst assistant। ये call आपकी service request में मदद के लिए record हो सकती है। "
-              "आप कभी भी 'technician' बोलेंगे तो मैं तुरंत ticket raise कर दूँगी। "
-              "बताइए, किस appliance या सामान में problem है?",
-        "en": "Hi{name}! I'm {agent}, {company}'s FixFirst assistant. This call may be recorded to help with your service request. "
-              "You can say 'technician' at any time and I'll raise a ticket right away. "
-              "Which appliance or item is giving you trouble?",
+        # RentBasket ecosystem call script, 1. Greeting.
+        "hi": "नमस्ते{name}! मैं {company} की FixFirst service assistant बोल रही हूँ। आपकी क्या मदद कर सकती हूँ?",
+        "en": "Hello{name}, this is FixFirst, {company}'s service assistant. How can I help you today?",
     },
     "escalated": {
-        "hi": "मैंने आपका ticket raise कर दिया है। आपका ticket number है {code}। {promise} "
-              "मैं WhatsApp पर details और photo भेजने का link भी भेज रही हूँ। क्या मैं आपकी और कोई मदद कर सकती हूँ?",
-        "en": "I have raised a ticket for this. Your ticket number is {code}. {promise} "
-              "I'm also sending the details on WhatsApp, with a link to share a photo. Is there anything else I can help you with?",
+        # 7b. TICKET and 8. Photo and notes ask.
+        "hi": "मैंने आपका ticket raise कर दिया है। {promise} आपका ticket number है {code}। मैं details WhatsApp पर भेज रही हूँ। "
+              "WhatsApp पर एक link आएगा: problem या display की photo भेज दीजिए, और call में कुछ बताना रह गया हो तो वहाँ लिख दीजिए। "
+              "इससे technician तैयारी के साथ आएगा। और कुछ मदद चाहिए?",
+        "en": "I have raised a ticket for this. {promise} Your ticket number is {code}. I'm sending the details on WhatsApp. "
+              "You'll get a link there: send a photo of the problem or the display, and write anything you missed telling me "
+              "on the call. That way the technician comes prepared. Anything else I can help you with?",
+    },
+    "reopened": {
+        "hi": "ये problem आपके पिछले ticket {code} पर ही थी, तो मैंने वही ticket दोबारा खोल दिया है। {promise} "
+              "मैं details WhatsApp पर भेज रही हूँ। और कुछ मदद चाहिए?",
+        "en": "This is the same problem as your earlier ticket {code}, so I've reopened it. {promise} "
+              "I'm sending the details on WhatsApp. Anything else I can help you with?",
     },
     "resolved_tail": {
-        "hi": "मैं कल WhatsApp पर पूछ लूँगी कि सब ठीक चल रहा है या नहीं। क्या मैं आपकी और कोई मदद कर सकती हूँ?",
-        "en": "I'll check with you on WhatsApp tomorrow to make sure it's still working. Is there anything else I can help you with?",
+        "hi": "और कुछ मदद चाहिए?",
+        "en": "Anything else I can help you with?",
+    },
+    "resolved_generic": {
+        "hi": "बहुत बढ़िया! मैं ticket close कर रही हूँ। कल हम WhatsApp पर check करेंगे।",
+        "en": "Great! I'm closing the ticket. We'll check with you on WhatsApp tomorrow.",
     },
     "anything_else": {
-        "hi": "क्या मैं आपकी और कोई मदद कर सकती हूँ?",
-        "en": "Is there anything else I can help you with?",
+        "hi": "और कुछ मदद चाहिए?",
+        "en": "Anything else I can help you with?",
     },
     "safety_goodbye": {
         # Ends with "अलविदा"/"goodbye": Bolna's hang-up prompt (bolna_admin.HANGUP_PROMPT) keys on these words.
-        "hi": "ठीक है, आप सुरक्षित रहिए। हमारी team {minutes} मिनट के अंदर आपको call करेगी। ध्यान रखिए, अलविदा!",
-        "en": "Alright, please stay safe. Our team will call you within {minutes} minutes. Take care, goodbye!",
+        "hi": "ठीक है, आप सुरक्षित रहिए। हमारी team जल्दी से जल्दी आपको call करेगी। ध्यान रखिए, अलविदा!",
+        "en": "Alright, please stay safe. Our team will call you as soon as possible. Take care, goodbye!",
     },
     "goodbye": {
-        "hi": "ठीक है! {company} को call करने के लिए धन्यवाद। आपका दिन शुभ हो!",
-        "en": "Alright! Thank you for calling {company}. Have a nice day!",
+        # 9. Closing. "Have a good day" is a hang-up phrase (bolna_admin.HANGUP_PROMPT).
+        "hi": "Thank you{name}। {company} choose करने के लिए शुक्रिया। Have a good day!",
+        "en": "Thank you{name}. Thanks for choosing {company}. Have a good day!",
+    },
+    # 2. Identify (number registered) and 3. Number not registered.
+    "identity_confirm": {
+        "hi": "मैं देख रही हूँ... आप {name} जी बोल रहे हैं? आपका address {area} है ना?",
+        "en": "Let me check... am I speaking with {name}? Your address is {area}, right?",
+    },
+    "identity_confirm_name": {
+        "hi": "मैं देख रही हूँ... आप {name} जी बोल रहे हैं?",
+        "en": "Let me check... am I speaking with {name}?",
+    },
+    "unregistered": {
+        "hi": "ये number हमारे record में नहीं है। क्या आपके घर में किसी और के नाम, जैसे roommate या family member, के number से booking है?",
+        "en": "This number isn't in our records. Is the booking under someone else's number at your home, like a roommate or a family member?",
+    },
+    "ask_other_number": {
+        "hi": "उनका number बता दीजिए।",
+        "en": "Please tell me their number.",
+    },
+    "otp_sent": {
+        "hi": "मैं उस number पर एक OTP भेज रही हूँ। Please OTP बता दीजिए।",
+        "en": "I'm sending an OTP to that number. Please tell me the OTP.",
+    },
+    "otp_retry": {
+        "hi": "ये OTP match नहीं हुआ। एक बार फिर से बता दीजिए।",
+        "en": "That OTP didn't match. Please tell me once more.",
+    },
+    "otp_ok": {
+        "hi": "Thank you, आपका number link हो गया है।",
+        "en": "Thank you, your number is now linked.",
+    },
+    "otp_fail": {
+        "hi": "कोई बात नहीं, मैं आपको हमारी team से connect करती हूँ।",
+        "en": "No problem, I'll connect you to our team.",
+    },
+    "number_unknown": {
+        "hi": "ये number भी हमारे record में नहीं मिला।",
+        "en": "I couldn't find that number in our records either.",
+    },
+    "ask_problem": {
+        "hi": "अब बताइए, किस appliance या सामान में problem है?",
+        "en": "Now please tell me, which appliance or item has a problem?",
+    },
+    # 4. Pick the product (one of that type).
+    "product_one": {
+        "hi": "आपके पास {product} rent पर है। उसी के बारे में बात कर रहे हैं?",
+        "en": "You have a {product} on rent. Is that the one you're calling about?",
+    },
+    # Misuse possible (any branch): never decide or mention charges.
+    "misuse": {
+        "hi": "मैं ये सारी details हमारी team को भेज रही हूँ, वो आपको update करेंगे।",
+        "en": "I'm sending all these details to our team; they'll update you.",
+    },
+    # Human handoff lines.
+    "handoff_now": {
+        "hi": "मैं आपको हमारी service team से connect कर रही हूँ।",
+        "en": "I'm connecting you to our service team now.",
+    },
+    "handoff_soon": {
+        "hi": "मैंने आपका ticket raise कर दिया है, आपका ticket number है {code}। हमारी service team जल्दी आपको call करेगी। और कुछ मदद चाहिए?",
+        "en": "I have raised a ticket for you; your ticket number is {code}. Our service team will call you shortly. Anything else I can help you with?",
+    },
+    "handoff_later": {
+        "hi": "मैंने आपका ticket raise कर दिया है। हमारी team {when} सुबह 9 बजे के बाद आपको call करेगी। और कुछ मदद चाहिए?",
+        "en": "I have raised a ticket for you. Our team will call you {when} after 9 am. Anything else I can help you with?",
     },
     "goodbye_later": {
         "hi": "ठीक है, जब आप तैयार हों तो हमें फिर से call कर लीजिए। धन्यवाद, अलविदा!",
@@ -313,8 +439,8 @@ PHRASES = {
         "en": "Is the water near a plug, switch, board or wires, or is it only dripping from the {appliance}?",
     },
     "hazard_hold": {
-        "hi": "जी। {reminder} हमारी team {minutes} मिनट के अंदर आपको call करेगी।",
-        "en": "Yes. {reminder} Our team will call you within {minutes} minutes.",
+        "hi": "जी। {reminder} हमारी team जल्दी से जल्दी आपको call करेगी।",
+        "en": "Yes. {reminder} Our team will call you as soon as possible.",
     },
     "take_your_time": {
         "hi": "ठीक है, आराम से कीजिए। हो जाए तो बताइए।",
@@ -348,14 +474,14 @@ WHAT YOU MAY DO
 - You may chat briefly, show empathy, clarify what the caller means, and answer questions about the call.
 
 FLOW
-1. Find out which appliance or furniture item (sofa, bed, dining table) has the problem. If the customer rents one of that type, use it; if several, ask which one. Then call start_troubleshooting, passing the symptom if the caller already described it.
+1. Find out which appliance or furniture item (sofa, bed, dining table) has the problem. If the customer rents one of that type, call start_troubleshooting with it (the system confirms the product with the caller). If they rent several of that type, ask which one with `say`, naming them, like "आपके पास दो AC हैं, एक Voltas और एक Lloyd। किस वाले में problem है?". Pass the symptom if the caller already described it. If you're not sure which issue the caller means, confirm it first in one short question, like "मतलब fridge से आगे से पानी आ रहा है, सही समझा?".
 2. After each step, call answer_step with the outcome that matches the caller's reply. If the reply is unclear, ask a short question with `say`; if they don't understand the step, call explain_step.
    Only answer a step after the caller has replied to it, with one exception: if CALL STATE shows a step that hasn't been read to the caller yet, and the caller's own words earlier in this call already answer that exact step (for example they said "abhi power cut hai, inverter pe chal raha hai" before being asked about backup power), you may answer it without asking. Then you must pass `caller_said`: the words that answer it, copied exactly from the caller's message, in the same script and spelling (don't translate, transliterate or paraphrase). Words about a different check don't count (a wall switch being on says nothing about the MCB). If in doubt, don't skip: the step will be read to the caller. The system checks the quote, and never skips the safety question.
    For the safety question, choose the no-hazard answer only if the caller actually said there is no smell, sparks, smoke or water. Never assume it from unrelated details; if they answered something else, ask again with `say`.
    If the caller answers the step and also asks a question ("haan kar dunga, par kya isse theek ho jayega?"), answer the step: the next step or ending answers it. That question is not a request for a technician.
    If the caller hasn't finished the step yet (they're about to do it, are still waiting, ask you to hold on, or ask whether they should wait), do NOT answer the step. Reply with `say` and only a short acknowledgement, like "ठीक है, आराम से कीजिए, हो जाए तो बताइए" or "हाँ, तीन minute रुकिए, फिर बताइए". Don't repeat the instruction; they already heard it.
 3. As soon as the caller mentions an error code, at any point (even while the safety question is pending), call record_error_code with the code exactly as heard (like "IE", "4C", "E4") and the brand if known. The system still asks the safety question first. Never explain what a code means yourself.
-4. If the caller asks for a technician or a person, can't do a step, sounds frustrated, or the problem isn't covered, call escalate_to_technician.
+4. If the caller asks for a technician or can't do a step, call escalate_to_technician. If they ask for a person (a human, a manager, customer care), are angry or upset, or the problem isn't covered by any playbook, call handoff_to_human.
 5. If the caller says it's working again outside a step, call mark_resolved.
 
 SAFETY COMES FIRST
@@ -368,6 +494,9 @@ These are NOT hazards on their own; keep following the playbook, which covers th
 - A bad smell on its own (old food, musty, "badboo") is not a hazard; the playbook asks about it. Only a burning, smoky, gas or chemical smell is.
 - A low, yellow or uneven gas-stove flame, or a burner that won't light, is a stove fault for a technician, unless the caller smells gas, hears hissing, or something caught fire.
 - Water leaking from an AC, fridge or washing machine is a playbook fault unless it is near a plug, socket, board or wires.
+
+POSSIBLE MISUSE
+If the damage may have come from how the item was used (it was dropped, hit or broken by someone, liquid was poured into it, the customer moved or opened it, a child or pet damaged it) or the caller asks whether they'll be charged, call flag_possible_misuse once, then carry on with the playbook as usual. Never decide or mention charges, fault or blame: the Auditing team reviews it and informs the customer.
 
 THINGS YOU DON'T DO
 - Don't discuss prices, deposits, damage charges, rent or refunds: say the {company} team will help with that.
@@ -391,7 +520,8 @@ class TurnResult:
 
 class Brain:
     def __init__(self, session: CallSession, llm: ChatModel, *, tenant: Tenant, settings: Settings,
-                 library: PlaybookLibrary, screen: SafetyScreen, tickets: TicketService, docs: DocLibrary | None = None):
+                 library: PlaybookLibrary, screen: SafetyScreen, tickets: TicketService, docs: DocLibrary | None = None,
+                 lookup_customer=None):
         self.s = session
         self.llm = llm
         self.tenant = tenant
@@ -403,6 +533,8 @@ class Brain:
         self._lookahead_left = 0   # extra LLM calls left in this turn for skipping answered steps
         self._evidence_from = 0    # index in session.messages where the current problem's words start
         self._timing: dict = {}
+        self.lookup_customer = lookup_customer   # async (phone) -> customer id: RentBasket lookup for the OTP number
+        self._pending_sends: list = []           # WhatsApp sends to run after the reply when not in the background
 
     # ---- public API ------------------------------------------------------------------
     def greeting(self) -> str:
@@ -468,11 +600,18 @@ class Brain:
         elif self.s.closed and self.s.asked_anything_else and not self.s.end_requested and caller_is_done(text):
             # The problem is closed, we asked "anything else?", and the caller is done: say goodbye. On a
             # phone call the Bolna bridge then tells Bolna to hang up (see bolna.py hangup_answer).
-            speech = self._phrase("goodbye")
+            first = self.s.first_name
+            speech = self._phrase("goodbye", name=(f" {first} जी" if self.s.language == "hi" else f" {first}") if first else "")
             self.s.end_requested = True
             self.s.messages.append({"role": "assistant", "content": speech})
             self.s.publish("goodbye")
             result = TurnResult(speech=speech)
+        elif not self.s.handed_off and human_requested(text):
+            speech = await self._handoff("Caller asked for a person", said=text[:200])
+            self.s.messages.append({"role": "assistant", "content": speech})
+            result = TurnResult(speech=speech)
+        elif (gate := await self._gate(text, timing)) is not None:
+            result = gate
         elif not self.s.ticket and technician_requested(text):
             stopped = f" (stopped at step '{self.s.run.current}')" if self.s.run and not self.s.run.finished else ""
             speech = await self._escalate(likely_cause=f"Customer asked for a technician{stopped}",
@@ -483,7 +622,116 @@ class Brain:
         else:
             result = await self._llm_turn(timing)
         self._finish_turn(result.speech, started, timing)
+        while self._pending_sends:
+            await self._pending_sends.pop(0)
         return result
+
+    # ---- before the model: who is calling, and which product (phone calls) -------------
+    async def _gate(self, text: str, timing: dict) -> TurnResult | None:
+        """RentBasket's call script steps 2 to 4: confirm the caller, link an unregistered number by OTP, confirm
+        the product. Phone calls only (the web call page already knows the customer). None: let the model answer."""
+        s = self.s
+        if (s.channel == "phone" and self.settings.identity_check and s.identity != "done" and not s.ticket
+                and not s.closed):
+            return await self._identity(text, timing)
+        if s.pending_start:
+            args, s.pending_start = s.pending_start, None
+            if _AFFIRM.search(text.lower()) and not _DENY.search(text.lower()):
+                s.confirmed_rentals.add(args["rental_id"])
+                out = await self._tool_start_troubleshooting(args, set(s.presented))
+                return self._scripted(out.get("speak") or "")
+        return None
+
+    async def _identity(self, text: str, timing: dict) -> TurnResult | None:
+        s, low = self.s, text.lower()
+        if s.identity is None:
+            if s.customer:
+                s.identity = "confirm"
+                first = s.first_name or s.customer.get("name", "")
+                area = s.customer.get("area")
+                key = "identity_confirm" if area else "identity_confirm_name"
+                return self._scripted(self._phrase(key, name=first, area=area))
+            s.identity = "ask_other"
+            return self._scripted(self._phrase("unregistered"))
+        if s.identity == "confirm":
+            s.identity = "done"
+            if _DENY.search(low) and not _AFFIRM.search(low.split(",")[0]):
+                s.not_account_holder = True   # someone else at the same home; carry on
+            return None   # the model now answers the problem the caller described (it's in the history)
+        if s.identity in ("ask_other", "await_number"):
+            number = phone_in(text)
+            if number:
+                return await self._send_otp(number)
+            if s.identity == "ask_other" and _DENY.search(low):
+                return self._scripted(await self._handoff("Caller's number isn't registered and no other number is on the booking"))
+            s.identity_tries += 1
+            if s.identity_tries >= 2:
+                return self._scripted(await self._handoff("Couldn't identify the caller's account"))
+            if s.identity == "ask_other" and _AFFIRM.search(low):
+                s.identity, s.identity_tries = "await_number", 0
+            return self._scripted(self._phrase("ask_other_number" if s.identity == "await_number" else "unregistered"))
+        if s.identity == "await_otp":
+            code, otp = otp_in(text), s.otp or {}
+            if code and code == otp.get("code") and time.monotonic() < otp.get("expires", 0):
+                if s.caller_phone:
+                    link_number(self.tickets.engine, s.caller_phone, otp["customer_id"], otp["phone"])
+                s.customer = fetch_customer(self.tickets.engine, otp["customer_id"])
+                s.rentals = fetch_rentals(self.tickets.engine, otp["customer_id"])
+                s.identity, s.linked_by_otp, s.otp = "done", True, None
+                s.publish("number_linked", customer_id=otp["customer_id"])
+                ok = self._phrase("otp_ok")
+                # Carry on with the problem the caller described at the start, if they did.
+                said = [m["content"] for m in s.messages if m["role"] == "user"]
+                if len(said) > 3:
+                    result = await self._llm_turn(timing)
+                    return TurnResult(speech=f"{ok} {result.speech}".strip(), hazard=result.hazard)
+                return self._scripted(f"{ok} {self._phrase('ask_problem')}")
+            otp["tries"] = otp.get("tries", 0) + 1
+            if otp["tries"] >= 2:
+                s.identity = "done"
+                return self._scripted(f"{self._phrase('otp_fail')} " + await self._handoff("OTP failed twice"))
+            return self._scripted(self._phrase("otp_retry"))
+        return None
+
+    async def _send_otp(self, number: str) -> TurnResult:
+        s = self.s
+        cid = await self.lookup_customer(number) if self.lookup_customer else None
+        if not cid:
+            cid = (fetch_customer_by_phone(self.tickets.engine, number) or {}).get("id")
+        if not cid:
+            return self._scripted(f"{self._phrase('number_unknown')} " + await self._handoff("Number given for OTP isn't registered"))
+        code = f"{secrets.randbelow(10 ** 6):06d}"
+        s.otp = {"code": code, "customer_id": cid, "phone": number, "tries": 0, "expires": time.monotonic() + 600}
+        sent = await self.tickets.send_otp(s, number, code) if not s.test_call else True
+        s.publish("otp_sent", to=f"…{number[-4:]}", sent=sent)
+        if not sent:
+            s.identity = "done"
+            return self._scripted(f"{self._phrase('otp_fail')} " + await self._handoff("Couldn't send the OTP"))
+        s.identity = "await_otp"
+        return self._scripted(self._phrase("otp_sent"))
+
+    def _scripted(self, speech: str) -> TurnResult:
+        self.s.messages.append({"role": "assistant", "content": speech})
+        return TurnResult(speech=speech, hazard=self.s.hazard)
+
+    async def _handoff(self, reason: str, said: str | None = None) -> str:
+        """A person takes over: a warm transfer to the care number 9am-8pm IST, else a ticket and a callback after
+        9am. A ticket is raised either way."""
+        s = self.s
+        s.handed_off = True
+        ticket = await self.tickets.create(s, priority="normal", category="handoff", likely_cause=f"Human handoff: {reason}",
+                                           technician_note="Call the customer back about this", reason=said)
+        s.resolution = "handoff"
+        self._close("escalated")
+        s.publish("handoff", reason=reason)
+        if self.tenant.in_human_hours():
+            if s.channel == "phone":
+                s.transfer_requested, s.asked_anything_else = True, False
+                return self._phrase("handoff_now")
+            return self._phrase("handoff_soon", code=" ".join(ticket["code"].replace("-", "")))
+        late = now_ist().hour >= self.tenant.human_hours[1]
+        when = ("कल" if late else "आज") if s.language == "hi" else ("tomorrow" if late else "today")
+        return self._phrase("handoff_later", when=when)
 
     async def voice_failure(self, reason: str) -> None:
         """Speech-to-text or text-to-speech is down mid-call: book a callback instead of leaving silence."""
@@ -532,7 +780,7 @@ class Brain:
         timing["llm_ms"] = llm_result.ms
 
         speech_tool, closing, needs_followup_llm, said, pending = None, None, False, None, None
-        tool_messages = []
+        tool_messages, prefixes = [], []
         for tc in llm_result.tool_calls:
             timing["tools"].append(tc.name)
             out = await self._execute(tc, presented_before)
@@ -541,6 +789,8 @@ class Brain:
                 self.s.language = out["language"]
             if out.get("own"):
                 said = out["own"]
+            if out.get("prefix"):
+                prefixes.append(out["prefix"])
             if out.get("closing"):
                 closing = out["speak"]
                 break
@@ -587,12 +837,22 @@ class Brain:
                 if self.s.stalls >= STALL_LIMIT:
                     speech = f"{speech} {self._phrase('offer_technician')}"
                     self.s.stalls = 0
+        elif self.s.misunderstood >= 1 and not self.s.handed_off:
+            # The second time the agent can't understand the caller: a person takes over.
+            speech = await self._handoff("Agent couldn't understand the caller twice")
+            self.s.messages.append({"role": "assistant", "content": speech})
         elif self.s.run and not self.s.run.finished:
             speech = f"{self._phrase('repeat')} {self._present(self.s.run.node)}"
         else:
             speech = self._phrase("repeat")
         if scripted or own_words:
             self.s.messages.append({"role": "assistant", "content": speech})
+        if scripted or own_words:
+            self.s.misunderstood = 0
+        elif not self.s.handed_off:
+            self.s.misunderstood += 1
+        if prefixes:
+            speech = " ".join([*prefixes, speech])
         return TurnResult(speech=speech, hazard=self.s.hazard)
 
     async def _followup_answer(self, timing: dict) -> str | None:
@@ -741,6 +1001,18 @@ class Brain:
                                {"reason": {"type": "string", "description": "Short reason in English"},
                                 "caller_requested": {"type": "boolean"}, "language": lang},
                                ["reason", "language"]))
+        if not self.s.handed_off:
+            tools.append(_tool("handoff_to_human", "Hand the call to a person: the caller asks for a human, manager or "
+                                                   "customer care (not just a technician visit), is angry or upset, or "
+                                                   "the problem isn't covered by any playbook.",
+                               {"reason": {"type": "string", "description": "Short reason in English"}, "language": lang},
+                               ["reason", "language"]))
+        if not self.s.audit_required:
+            tools.append(_tool("flag_possible_misuse", "The damage may have come from how the item was used, or the caller "
+                                                       "asks about charges. The Auditing team reviews it; never mention "
+                                                       "charges or blame.",
+                               {"evidence": {"type": "string", "description": "The caller's words, short"}, "language": lang},
+                               ["evidence", "language"]))
         if not self.s.hazard:
             tools.append(_tool("flag_safety_concern", "The caller mentioned something possibly dangerous.",
                                {"kind": {"type": "string", "enum": list(HAZARD_KINDS)},
@@ -795,6 +1067,13 @@ class Brain:
             rental = matches[0] if len(matches) == 1 else None
         if rental:
             appliance = rental["appliance"]
+        if (self.s.channel == "phone" and self.settings.identity_check and rental and not args.get("rental_id")
+                and rental["id"] not in self.s.confirmed_rentals):
+            # Call script 4: "Aapke paas {brand} {product} rent par hai. Usi ke baare mein baat kar rahe hain?"
+            self.s.pending_start = {**args, "rental_id": rental["id"]}
+            product = " ".join(p for p in (rental.get("brand"), rental["label"]) if p)
+            return {"result": "asked the caller to confirm the product; wait for their answer",
+                    "speak": self._phrase("product_one", product=product)}
         self.s.rental, self.s.appliance = rental, appliance
         playbook = self.library.for_appliance(appliance)
         if not playbook:
@@ -955,6 +1234,17 @@ class Brain:
         closing = await self._escalate(likely_cause=likely, technician_note=None, reason=args.get("reason"))
         return {"result": "technician booked", "speak": closing, "closing": True}
 
+    async def _tool_handoff_to_human(self, args: dict, _presented: set[str]) -> dict:
+        speech = await self._handoff(args.get("reason") or "Caller needs a person")
+        return {"result": "handed to a person", "speak": speech, "closing": True}
+
+    async def _tool_flag_possible_misuse(self, args: dict, _presented: set[str]) -> dict:
+        first = not self.s.audit_required
+        self.tickets.flag_audit(self.s)
+        self.s.publish("misuse", evidence=args.get("evidence") or "")
+        return {"result": "flagged for the Auditing team; carry on with the playbook (never mention charges)",
+                "prefix": self._phrase("misuse") if first else None}
+
     async def _tool_add_note(self, args: dict, _presented: set[str]) -> dict:
         note = (args.get("note") or "").strip()
         if self.s.ticket and note:
@@ -1010,11 +1300,19 @@ class Brain:
         if node.kind == "followup":
             text = node.text(self.s.language)
             name = appliance_name(self.s.appliance, "en")
+            ticket = await self.tickets.create(self.s, priority="normal", category="selffix",
+                                               likely_cause=f"{self._kb_issue() or 'Self-fix'} in progress (customer finishing the steps)",
+                                               status="SELF_FIX_IN_PROGRESS", notify=False)
+            if node.whatsapp:   # T2 selffix_steps_<issue>
+                self._background(self.tickets.send_selffix_steps(self.s, node.whatsapp, ticket))
             self.tickets.schedule_followup(self.s, node.followup_minutes or 30, "check_back",
                                            f"{self.tenant.name} FixFirst: checking in on your {name}. Is it working now? "
                                            f"Reply YES, or NO and we'll book a technician.")
             self._close("followup")
             return {"result": "follow-up scheduled", "speak": f"{text} {self._phrase('anything_else')}", "closing": True}
+        if node.kind == "escalate" and node.handoff:
+            speech = await self._handoff(node.likely_cause or "Issue not in the KB")
+            return {"result": "handed to a person", "speak": speech, "closing": True}
         if node.kind == "escalate":
             prefix = node.text(self.s.language)
             closing = await self._escalate(likely_cause=node.likely_cause or "Needs a technician",
@@ -1038,8 +1336,8 @@ class Brain:
         self.s.publish("safety", kind=kind, label=self.screen.label(kind), source=source, evidence=evidence)
         await self.tickets.create(self.s, priority="urgent", category="safety",
                                   likely_cause=f"SAFETY: {self.screen.label(kind)}",
-                                  technician_note=f"Urgent callback within {self.tenant.urgent_callback_minutes} min; "
-                                                  f"detected by {source}: '{evidence}'",
+                                  technician_note=f"URGENT: call back within {self.tenant.urgent_callback_minutes} min and "
+                                                  f"visit the same day; detected by {source}: '{evidence}'",
                                   reason=None)
         self._close("safety")
         return self.screen.script(kind, self.s.language, self.tenant)
@@ -1050,17 +1348,39 @@ class Brain:
         self._close("escalated")
         code = " ".join(ticket["code"].replace("-", ""))
         promise = self.tenant.normal_visit_promise.get(self.s.language, "")
-        return self._phrase("escalated", code=code, promise=promise)
+        return self._phrase("reopened" if ticket.get("reopened") else "escalated", code=code, promise=promise)
 
     async def _resolve(self, resolution: str, text: str) -> str:
         self.s.resolution = resolution
         name = appliance_name(self.s.appliance, "en")
+        # Self-fix worked: a RESOLVED_REMOTE ticket ("Main ticket close kar rahi hoon"), checked on WhatsApp at 24 h.
+        await self.tickets.create(self.s, priority="normal", category="selffix",
+                                  likely_cause=f"{self._kb_issue() or 'Problem'} fixed by the customer on the call",
+                                  status="RESOLVED_REMOTE", notify=False)
+        text = text or self._phrase("resolved_generic")
         self.tickets.schedule_followup(
             self.s, self.tenant.followup_hours * 60, "still_working",
             f"Hi {self.s.first_name or 'there'}, your {name} was fixed on the call with {self.tenant.name} FixFirst. "
             f"Is it still working fine? Reply YES, or NO and we'll book a technician.")
         self._close("resolved")
         return f"{text} {self._phrase('resolved_tail')}".strip()
+
+    def _kb_issue(self) -> str | None:
+        """The KB issue the caller is on (from the triage answer), like "AC-04 Weak airflow"."""
+        run = self.s.run
+        first = next((p for p in (run.path if run else []) if p["node"] == run.playbook.triage_node), None) if run else None
+        label = (first or {}).get("label", "")
+        m = re.match(r"([A-Z]{2}-\d\d [^(]*)", label)
+        return m.group(1).strip() if m else None
+
+    def _background(self, coro) -> None:
+        """WhatsApp sends during a call: don't make the caller wait on Meta's API (tickets.notify_in_background)."""
+        if self.tickets.notify_in_background:
+            task = asyncio.create_task(coro)
+            self.tickets._pending.add(task)
+            task.add_done_callback(self.tickets._pending.discard)
+        else:
+            self._pending_sends.append(coro)
 
     def _close(self, outcome: str) -> None:
         self.s.outcome = outcome
@@ -1167,12 +1487,16 @@ class Brain:
         if self.s.error_code:
             lines.append(f"Error code recorded: {self.s.error_code['code']} ({self.s.error_code.get('brand') or 'brand unknown'}).")
         if self.s.hazard:
-            lines.append(f"SAFETY ALERT ({self.s.hazard}) is active: the safety instructions were read and an urgent "
-                         f"callback is booked within {self.tenant.urgent_callback_minutes} minutes. Don't troubleshoot or "
+            lines.append(f"SAFETY ALERT ({self.s.hazard}) is active: the safety instructions were read and an URGENT "
+                         f"ticket is raised; the team will call as soon as possible. Don't troubleshoot or "
                          "give instructions (questions about what to do with the appliance get a scripted reminder "
                          "automatically). Reply briefly and calmly, confirm the team will call, and say goodbye.")
+        if self.s.audit_required:
+            lines.append("Possible misuse is flagged for the Auditing team. Never mention charges, fault or blame.")
+        if self.s.handed_off:
+            lines.append("The call has been handed to a person (or a callback is promised). Reply briefly and kindly.")
         if self.s.ticket:
-            lines.append(f"Ticket {self.s.ticket['code']} ({self.s.ticket['priority']}) is booked. The call is wrapping up: "
+            lines.append(f"Ticket {self.s.ticket['code']} ({self.s.ticket['status']}) is booked. The call is wrapping up: "
                          "reassure, answer questions about next steps, and say goodbye. If the caller mentions another "
                          "problem, record it with add_note and say the technician will check it too.")
         elif self.s.closed:

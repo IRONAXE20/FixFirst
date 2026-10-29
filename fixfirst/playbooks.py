@@ -14,6 +14,7 @@ from .config import KNOWLEDGE_DIR, now_utc
 from .safety import HAZARD_KINDS
 
 TERMINAL_KINDS = ("resolve", "escalate", "followup")
+SELF_FIX_ISSUES = ("AC-04", "FR-04", "WM-01", "MW-04")   # the KB's SELF-FIX issues (T2 templates)
 
 
 class PlaybookError(ValueError):
@@ -40,6 +41,8 @@ class Node:
     technician_note: str | None = None
     followup_minutes: int | None = None
     sources: list[str] = field(default_factory=list)
+    whatsapp: str | None = None   # followup: also send this KB self-fix's steps on WhatsApp (T2), e.g. "FR-04"
+    handoff: bool = False         # escalate: a person takes over (issue not in the KB), not a plain ticket
 
     @property
     def terminal(self) -> bool:
@@ -86,6 +89,7 @@ class Playbook:
                 "id": n.id, "kind": n.kind, "say": n.say, "help": n.help, "sources": n.sources,
                 "likely_cause": n.likely_cause, "technician_note": n.technician_note,
                 "resolution": n.resolution, "followup_minutes": n.followup_minutes,
+                "whatsapp": n.whatsapp, "handoff": n.handoff,
                 "outcomes": [{"id": o.id, "label": o.label, "next": o.next, "hazard": o.hazard}
                              for o in n.outcomes.values()],
             } for n in self.nodes.values()],
@@ -101,7 +105,7 @@ def _parse(raw: dict) -> Playbook:
             id=node_id, kind=n.get("kind", "step"), say=n.get("say") or {}, help=n.get("help") or {},
             outcomes=outcomes, resolution=n.get("resolution"), likely_cause=n.get("likely_cause"),
             technician_note=n.get("technician_note"), followup_minutes=n.get("followup_minutes"),
-            sources=n.get("sources") or [])
+            sources=n.get("sources") or [], whatsapp=n.get("whatsapp"), handoff=bool(n.get("handoff")))
     return Playbook(id=raw["id"], appliance=raw["appliance"], title=raw.get("title") or {},
                     status=raw.get("status", "draft-unreviewed"), entry=raw["entry"], nodes=nodes,
                     triage_node=raw.get("triage_node"), routes=raw.get("routes") or {},
@@ -135,6 +139,10 @@ def validate(pb: Playbook, source_ids: set[str]) -> list[str]:
             errors.append(f"{where}: escalate needs likely_cause")
         if n.kind == "followup" and not n.followup_minutes:
             errors.append(f"{where}: followup needs followup_minutes")
+        if n.whatsapp and (n.kind != "followup" or n.whatsapp not in SELF_FIX_ISSUES):
+            errors.append(f"{where}: whatsapp steps go on a followup node, one of {', '.join(SELF_FIX_ISSUES)}")
+        if n.handoff and n.kind != "escalate":
+            errors.append(f"{where}: handoff goes on an escalate node")
         for o in n.outcomes.values():
             if not isinstance(o.id, str):
                 errors.append(f"{where}: outcome id {o.id!r} isn't text (YAML reads yes/no/on/off as booleans; rename it)")

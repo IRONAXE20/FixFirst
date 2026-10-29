@@ -48,7 +48,7 @@ def purge(engine: Engine, retention_days: int) -> int:
     now = now_utc()
     with engine.begin() as c:
         closed = c.execute(select(tickets.c.id, tickets.c.code, tickets.c.photos)
-                           .where(tickets.c.status == "closed")
+                           .where(tickets.c.status == "CLOSED")
                            .where(tickets.c.updated_at < now - timedelta(days=retention_days))).all()
         codes = [t.code for t in closed if t.photos]
         removed = 0

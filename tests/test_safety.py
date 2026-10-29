@@ -98,11 +98,13 @@ def test_gas_script_never_asks_to_operate_a_switch():
             assert forbidden not in lowered, f"gas script ({lang}) contains '{forbidden}'"
 
 
-def test_every_script_names_the_callback_promise():
+def test_every_script_promises_an_urgent_callback_without_a_minute_count():
+    # RentBasket's call script: "Maine URGENT ticket raise kiya hai, hamari team jaldi se jaldi call karegi."
     tenant = Tenant.load()
-    for kind in ("fire", "gas", "injury", "electrical", "battery", "water_electric"):
-        for lang in ("en", "hi"):
-            assert str(tenant.urgent_callback_minutes) in get_screen().script(kind, lang, tenant)
+    for kind in ("fire", "gas", "injury", "electrical", "battery", "water_electric", "stop_use"):
+        for lang, promise in (("en", "as soon as possible"), ("hi", "जल्दी से जल्दी")):
+            text = get_screen().script(kind, lang, tenant)
+            assert promise in text and "URGENT" in text and str(tenant.urgent_callback_minutes) not in text
 
 
 @pytest.mark.parametrize("text", [
