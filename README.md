@@ -168,7 +168,7 @@ Calls go through Bolna's own hosted numbers; no separate Plivo account is needed
 ## WhatsApp
 
 Live from RentBasket's number (+91 99580 96702). Two template sets:
-- **v1** (approved, in use): `fixfirst_customer_update` and `fixfirst_team_ticket`, one body variable each.
+- **v1** (approved Utility templates, in use): `fixfirst_service_request` for the customer (name, ticket, product, promise or safety line, and a URL button with the customer's link token) and `fixfirst_team_ticket` for the team. `fixfirst_customer_update` is Marketing and isn't used. Self-fix steps and check-ins have no approved Utility template yet, so they're logged as `no_template` on `/ops` and not sent, and a caller who can't do a self-fix now gets a ticket instead of WhatsApp steps.
 - **ecosystem** (`WHATSAPP_TEMPLATES=ecosystem` once Meta approves them): T1 `technician_booked` with the "Upload photo or details" button, T2 `selffix_steps_ac04/fr04/wm01/mw04`, T4 `urgent_safety`, T9 `followup_check`, T10a `otp_verify`. The exact text to submit is in [docs/whatsapp-templates.md](docs/whatsapp-templates.md). Until then an unregistered caller can't get an OTP and goes to a person.
 
 The team's numbers go in `knowledge/tenant.yaml` (`team_whatsapp`); until then team messages land in the outbox on `/ops`. The 48-hour follow-up call (when the 24-hour WhatsApp gets no reply) needs an outbound telephony number on Bolna and isn't built yet.

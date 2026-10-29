@@ -126,7 +126,30 @@ def test_self_fix_on_whatsapp_is_a_self_fix_ticket_with_the_steps(env):
     assert session.selffix_ticket["status"] == "SELF_FIX_IN_PROGRESS" and session.ticket is None
     steps = next(m for m in rows(env.engine, outbox) if m["kind"] == "selffix_AC-04")
     assert "Wash them with plain water" in steps["body"]
-    assert rows(env.engine, tickets)[0]["channels_used"] == "both"   # call + WhatsApp
+    # v1 templates: no approved Utility template carries steps until T2, so it's logged, not sent.
+    assert steps["status"] == "no_template" and rows(env.engine, tickets)[0]["channels_used"] == "voice_only"
+
+
+def test_without_t2_live_the_agent_books_a_ticket_instead_of_promising_whatsapp_steps(env, monkeypatch):
+    from fixfirst.tickets import TicketService
+    monkeypatch.setattr(TicketService, "can_send_steps", property(lambda self: False))
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="not_near", language="hi")]),
+    ])
+    run(brain.respond("hawa kam aa rahi hai"))
+    speech = run(brain.respond("abhi ghar par nahi hoon")).speech
+    assert "steps" not in speech and session.ticket["status"] == "TICKET_RAISED"
+    assert session.ticket["summary"]["likely_cause"].startswith("AC-04")
+
+
+def test_customer_ticket_message_uses_the_utility_template(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="fridge", rental_id="R13", symptom="not_cooling", language="hi")]),
+    ])
+    run(brain.respond("fridge thanda nahi kar raha"))
+    msg = next(m for m in rows(env.engine, outbox) if m["audience"] == "customer")
+    assert msg["body"].startswith("Hi Ananya, your RentBasket service request FF-") and "[button: " in msg["body"]
 
 
 def test_fridge_front_leak_steps_always_go_on_whatsapp(env):
@@ -197,3 +220,28 @@ def test_ecosystem_templates_send_t1_with_the_customer_link_button(env):
     run(brain.respond("my fridge isn't cooling"))
     t1 = next(m for m in rows(env.engine, outbox) if m["kind"] == "T1_technician_booked")
     assert "Welcome to Rentbasket" in t1["body"] and "+91 9958187021" in t1["body"] and "/u/" in t1["body"]
+
+
+def test_a_yes_in_devanagari_moves_on_to_the_number(env, monkeypatch):
+    # Live call 29 Oct: "यस।" wasn't understood, and the next "हाँ…" was counted as a second failure (handoff).
+    monkeypatch.setattr(env.tenant.__class__, "in_human_hours", lambda self, at=None: False)
+    brain, session, _ = env.make([], customer=None, channel="phone", phone="+91 98111 22233")
+    assert run(brain.respond("मेरा एसी ठीक से ठंडा नहीं कर रहा।")).speech == brain._phrase("unregistered")
+    assert run(brain.respond("यस।")).speech == brain._phrase("ask_other_number")
+    assert run(brain.respond("नौ शून्य शून्य शून्य शून्य शून्य शून्य शून्य शून्य एक")).speech == brain._phrase("otp_sent")
+    assert not session.handed_off
+
+
+def test_unclear_answers_still_hand_off_after_two_tries(env, monkeypatch):
+    monkeypatch.setattr(env.tenant.__class__, "in_human_hours", lambda self, at=None: False)
+    brain, session, _ = env.make([], customer=None, channel="phone", phone="+91 98111 22233")
+    run(brain.respond("AC kharab hai"))
+    run(brain.respond("matlab"))
+    run(brain.respond("pata nahi"))
+    assert session.handed_off
+
+
+def test_numbers_in_devanagari_digits_and_english_words_in_hindi_script():
+    from fixfirst.brain import phone_in
+    assert phone_in("९००००००००१") == "9000000001"
+    assert phone_in("नाइन ज़ीरो ज़ीरो ज़ीरो ज़ीरो ज़ीरो ज़ीरो ज़ीरो ज़ीरो वन") == "9000000001"

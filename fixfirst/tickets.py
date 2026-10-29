@@ -71,6 +71,11 @@ class TicketService:
     def ecosystem(self) -> bool:
         return self.settings.whatsapp_templates == "ecosystem"
 
+    @property
+    def can_send_steps(self) -> bool:
+        """Self-fix steps need T2 (selffix_steps_<issue>); the v1 set has no Utility template that can carry them."""
+        return self.ecosystem or not self.whatsapp.live
+
     # ---- tickets ---------------------------------------------------------------------
     async def create(self, session: CallSession, *, priority: str, category: str, likely_cause: str,
                      technician_note: str | None = None, reason: str | None = None, status: str | None = None,
@@ -303,10 +308,21 @@ class TicketService:
                                      ticket_code=ticket["code"], call_id=session.id)
         session.publish("whatsapp", audience="team", body=team_body)
         to = None if session.test_call else session.caller_phone
-        if not self.ecosystem:
-            status = await self.whatsapp.send(to, "customer", f"ticket_{ticket['category']}",
-                                              self.customer_message(ticket, session), ticket_code=ticket["code"],
-                                              call_id=session.id)
+        if not self.ecosystem:   # fixfirst_service_request (Utility)
+            name, product = self._names(session)
+            if ticket["status"] == "URGENT":
+                line = (f"For your safety please keep it switched off at the wall and don't touch it. Our team will "
+                        f"call you shortly from {self.tenant.care_number()}.")
+            else:
+                line = self.tenant.normal_visit_promise.get("en", "Our technician will contact you soon.")
+            params = [name, ticket["code"], product, line]
+            preview = (f"Hi {name}, your {self.tenant.name} service request {ticket['code']} for your {product} is "
+                       f"registered. {line} To help our technician come prepared, please add a photo of the appliance "
+                       f"using the button below. [button: {ticket['photo_url']}]")
+            status = await self.whatsapp.send_template(to, "customer", f"ticket_{ticket['category']}",
+                                                       self.settings.whatsapp_template_customer, params, preview=preview,
+                                                       button_param=ticket["photo_url"].rsplit("/", 1)[-1],
+                                                       ticket_code=ticket["code"], call_id=session.id)
         else:
             name, product = self._names(session)
             care = self.tenant.care_number((session.customer or {}).get("area"))
@@ -347,11 +363,9 @@ class TicketService:
             status = await self.whatsapp.send_template(to, "customer", f"T2_selffix_{issue}",
                                                        f"selffix_steps_{issue.lower().replace('-', '')}", [name],
                                                        preview=preview, ticket_code=ticket["code"], call_id=session.id)
-        else:
-            text = (f"{self.tenant.name} FixFirst: steps for {what} (ticket {ticket['code']}): "
-                    + " ".join(f"{i}. {s}" for i, s in enumerate(steps, 1)) + " Reply here if it still isn't working.")
-            status = await self.whatsapp.send(to, "customer", f"selffix_{issue}", text, ticket_code=ticket["code"],
-                                              call_id=session.id)
+        else:   # no approved Utility template can carry steps until T2 is approved
+            status = self.whatsapp.skip(to, "customer", f"selffix_{issue}", preview, ticket_code=ticket["code"],
+                                        call_id=session.id)
         self._whatsapp_used(ticket, status)
 
     async def send_otp(self, session: CallSession, phone: str, otp: str) -> bool:
@@ -438,8 +452,8 @@ class TicketService:
             if tpl:
                 await self.whatsapp.send_template(phone, "customer", f"followup_{f['kind']}", tpl["template"],
                                                   tpl["params"], preview=tpl["preview"], call_id=f["call_id"])
-            else:
-                await self.whatsapp.send(phone, "customer", f"followup_{f['kind']}", f["body"], call_id=f["call_id"])
+            else:   # check-ins need T9 (followup_check); the Marketing template isn't used
+                self.whatsapp.skip(phone, "customer", f"followup_{f['kind']}", f["body"], call_id=f["call_id"])
         return len(due)
 
     # ---- call records ----------------------------------------------------------------

@@ -80,8 +80,18 @@ class WhatsApp:
                 status, error = "failed", str(e)
             if error:
                 logger.warning(f"WhatsApp send to {mask(to)} failed: {error}")
+        self._log(to, audience, kind, preview, status, error, ticket_code, call_id)
+        return status
+
+    def skip(self, to: str | None, audience: str, kind: str, preview: str, *, ticket_code: str | None = None,
+             call_id: str | None = None) -> str:
+        """No approved Utility template carries this message yet (e.g. self-fix steps before T2): log it, send nothing."""
+        logger.info(f"WhatsApp {kind} to {mask(to)} not sent: no approved template for it yet")
+        self._log(to, audience, kind, preview, "no_template", None, ticket_code, call_id)
+        return "no_template"
+
+    def _log(self, to, audience, kind, preview, status, error, ticket_code, call_id) -> None:
         with self.engine.begin() as c:
             c.execute(insert(outbox).values(to=to, audience=audience, kind=kind, body=preview, status=status,
                                             error=error, ticket_code=ticket_code, call_id=call_id,
                                             created_at=now_utc()))
-        return status

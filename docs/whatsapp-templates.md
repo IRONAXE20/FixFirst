@@ -6,8 +6,16 @@ them by name. Variables are numbered `{{1}}`, `{{2}}`… in Meta's editor; the n
 fills in. Meta needs a sample value for every variable.
 
 Once **all** are approved, set `WHATSAPP_TEMPLATES=ecosystem` on Render (and in `.env`). Until then FixFirst
-keeps sending the two approved v1 templates (`fixfirst_customer_update`, `fixfirst_team_ticket`), and an
-unregistered caller can't get an OTP, so they go to a person instead.
+sends only the two approved **Utility** templates: `fixfirst_service_request` to the customer and
+`fixfirst_team_ticket` to the team (`fixfirst_customer_update` is Marketing and isn't used). An unregistered
+caller can't get an OTP, so they go to a person instead.
+
+**Fix needed in `fixfirst_service_request`:** its button URL is saved as
+`https://rentbasket.com/service/%7B%7B1%7D%7D{{1}}`, with a stray encoded `{{1}}`, so links come out as
+`.../service/%7B%7B1%7D%7D<token>`. Edit the button to `https://rentbasket.com/service/{{1}}`, and make
+`rentbasket.com/service/<token>` redirect to `https://fixfirst-zgo0.onrender.com/u/<token>` (the photo-and-notes
+page). Or point the button straight at `https://fixfirst-zgo0.onrender.com/u/{{1}}`. Editing an approved
+template sends it for review again.
 
 The team's message (`fixfirst_team_ticket`) stays as it is.
 

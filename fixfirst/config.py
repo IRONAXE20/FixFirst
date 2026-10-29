@@ -46,7 +46,10 @@ class Settings:
     whatsapp_mode: str = "dry_run"
     whatsapp_token: str = ""
     whatsapp_phone_number_id: str = ""
-    whatsapp_template_customer: str = "fixfirst_customer_update"
+    # Utility templates only: fixfirst_customer_update is categorised Marketing and isn't used any more.
+    # fixfirst_service_request: "Hi {{1}}, your RentBasket service request {{2}} for your {{3}} is registered. {{4}}
+    # …", with a URL button whose suffix is the customer's link token.
+    whatsapp_template_customer: str = "fixfirst_service_request"
     whatsapp_template_team: str = "fixfirst_team_ticket"
     whatsapp_template_lang: str = "en_IN"   # the templates are approved as English (India)
     whatsapp_business_account_id: str = ""

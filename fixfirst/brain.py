@@ -126,19 +126,25 @@ def human_requested(text: str) -> bool:
     return False
 
 
+# Speech-to-text often writes English words in Devanagari ("यस", "ओके", "नो"): live call 29 Oct.
 _AFFIRM = re.compile(r"\b(haan|han|ha|haa|ji|jee|yes|yeah|yep|sahi|bilkul|correct|right|wahi|wohi|usi|same|theek|thik|ok|okay)\b"
-                     r"|हाँ|हां|जी|सही|बिल्कुल|वही|उसी|ठीक")
-_DENY = re.compile(r"^\W*(no|nope|nahi|nahin|nai|na|galat|wrong)\b|^\W*(नहीं|नही|ना|गलत)|\b(dusra|doosra|dusre|other one|another)\b|दूसर")
+                     r"|हाँ|हां|जी|सही|बिल्कुल|वही|उसी|ठीक|यस|येस|यप|ओके|ओक|राइट|करेक्ट")
+_DENY = re.compile(r"^\W*(no|nope|nahi|nahin|nai|na|galat|wrong)\b|^\W*(नहीं|नही|ना|गलत|नो|नोप)(?![ऀ-ॿ])"
+                   r"|\b(dusra|doosra|dusre|other one|another)\b|दूसर")
 _DIGIT_WORDS = {"zero": "0", "shunya": "0", "sunya": "0", "one": "1", "ek": "1", "two": "2", "do": "2", "three": "3",
                 "teen": "3", "four": "4", "char": "4", "chaar": "4", "five": "5", "paanch": "5", "panch": "5", "six": "6",
                 "chhe": "6", "che": "6", "chhah": "6", "seven": "7", "saat": "7", "eight": "8", "aath": "8", "nine": "9",
                 "nau": "9", "शून्य": "0", "एक": "1", "दो": "2", "तीन": "3", "चार": "4", "पांच": "5", "पाँच": "5",
-                "छह": "6", "छः": "6", "सात": "7", "आठ": "8", "नौ": "9"}
+                "छह": "6", "छः": "6", "सात": "7", "आठ": "8", "नौ": "9", "ज़ीरो": "0", "जीरो": "0", "वन": "1",
+                "टू": "2", "थ्री": "3", "फोर": "4", "फ़ोर": "4", "फाइव": "5", "सिक्स": "6", "सेवन": "7", "एट": "8",
+                "नाइन": "9"}
+_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 
 
 def spoken_digits(text: str) -> str:
     """Digits in what speech-to-text heard, spoken words included ("nau aath 1 0 ..." -> "9810...")."""
     out = []
+    text = text.translate(_DEVANAGARI_DIGITS)   # "९८१०…" -> "9810…"
     for tok in re.findall(r"[0-9]+|[a-z]+|[ऀ-ॿ]+", text.lower()):
         if tok.isdigit():
             out.append(tok)
@@ -664,11 +670,13 @@ class Brain:
                 return await self._send_otp(number)
             if s.identity == "ask_other" and _DENY.search(low):
                 return self._scripted(await self._handoff("Caller's number isn't registered and no other number is on the booking"))
+            if s.identity == "ask_other" and _AFFIRM.search(low):
+                # "हाँ, किसी और के नंबर से है": a yes is progress, not a failed attempt (live call 29 Oct).
+                s.identity, s.identity_tries = "await_number", 0
+                return self._scripted(self._phrase("ask_other_number"))
             s.identity_tries += 1
             if s.identity_tries >= 2:
                 return self._scripted(await self._handoff("Couldn't identify the caller's account"))
-            if s.identity == "ask_other" and _AFFIRM.search(low):
-                s.identity, s.identity_tries = "await_number", 0
             return self._scripted(self._phrase("ask_other_number" if s.identity == "await_number" else "unregistered"))
         if s.identity == "await_otp":
             code, otp = otp_in(text), s.otp or {}
@@ -1297,6 +1305,13 @@ class Brain:
         if node.kind == "resolve":
             speech = await self._resolve(node.resolution or "fixed_on_call", node.text(self.s.language))
             return {"result": f"resolved ({node.resolution})", "speak": speech, "closing": True}
+        if node.kind == "followup" and node.whatsapp and not self.tickets.can_send_steps:
+            # The steps would go on WhatsApp (T2), which isn't approved yet: book the technician instead of
+            # promising a message that can't be sent.
+            closing = await self._escalate(likely_cause=f"{self._kb_issue() or node.whatsapp}: caller can't do the "
+                                                        "self-fix now (WhatsApp steps not available yet)",
+                                           technician_note=None, reason=None)
+            return {"result": "technician booked", "speak": closing, "closing": True}
         if node.kind == "followup":
             text = node.text(self.s.language)
             name = appliance_name(self.s.appliance, "en")
