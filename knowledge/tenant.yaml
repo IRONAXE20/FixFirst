@@ -11,7 +11,7 @@ support_phone: "+91 99588 58473"
 
 # Who receives ticket summaries on WhatsApp (international format, no "+").
 # ASK: the service desk / technician group numbers. Empty = messages only go to the outbox.
-team_whatsapp: []
+team_whatsapp: ["919654117078"]   # testing (30 Oct): replace with the service desk number(s)
 # ASK: a named on-call owner for urgent safety tickets.
 on_call_name: "Service desk (set a named on-call owner)"
 # RentBasket ecosystem SLA (29 Oct 2026): URGENT = callback within 1 hour plus a same-day visit. The agent
