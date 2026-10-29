@@ -59,6 +59,7 @@ class CallSession:
     identity: str | None = None        # phone calls: None -> confirm | ask_other | await_number | await_otp -> done
     identity_tries: int = 0
     otp: dict | None = None            # {"code", "customer_id", "phone", "tries", "expires"}
+    digits: str = ""                   # a number or OTP said in pieces across turns ("99…", "249…")
     linked_by_otp: bool = False
     not_account_holder: bool = False
     pending_start: dict | None = None  # start_troubleshooting args waiting for "yes, that product"

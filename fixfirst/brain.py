@@ -365,6 +365,10 @@ PHRASES = {
         "hi": "ये number भी हमारे record में नहीं मिला।",
         "en": "I couldn't find that number in our records either.",
     },
+    "go_on": {
+        "hi": "जी, आगे बताइए।",
+        "en": "Yes, go on.",
+    },
     "ask_problem": {
         "hi": "अब बताइए, किस appliance या सामान में problem है?",
         "en": "Now please tell me, which appliance or item has a problem?",
@@ -665,9 +669,20 @@ class Brain:
                 s.not_account_holder = True   # someone else at the same home; carry on
             return None   # the model now answers the problem the caller described (it's in the history)
         if s.identity in ("ask_other", "await_number"):
-            number = phone_in(text)
-            if number:
-                return await self._send_otp(number)
+            # Callers say a number in pieces ("99…", "249…") and Bolna sends each piece as a turn (live call
+            # 29 Oct): collect the digits until there are ten, and only count a reply with no digits as a miss.
+            heard = spoken_digits(text)
+            if heard:
+                s.identity, s.identity_tries = "await_number", 0
+                s.digits += heard
+                number = phone_in(s.digits)
+                if number:
+                    s.digits = ""
+                    return await self._send_otp(number)
+                if len(s.digits) < 12:
+                    return self._scripted(self._phrase("go_on"))
+                s.digits = ""   # more than a phone number's worth of digits: start over
+                return self._scripted(self._phrase("ask_other_number"))
             if s.identity == "ask_other" and _DENY.search(low):
                 return self._scripted(await self._handoff("Caller's number isn't registered and no other number is on the booking"))
             if s.identity == "ask_other" and _AFFIRM.search(low):
@@ -679,7 +694,13 @@ class Brain:
                 return self._scripted(await self._handoff("Couldn't identify the caller's account"))
             return self._scripted(self._phrase("ask_other_number" if s.identity == "await_number" else "unregistered"))
         if s.identity == "await_otp":
-            code, otp = otp_in(text), s.otp or {}
+            otp = s.otp or {}
+            heard = spoken_digits(text)
+            if heard and len(s.digits + heard) < len(otp.get("code", "")):
+                s.digits += heard   # the OTP in pieces: wait for the rest
+                return self._scripted(self._phrase("go_on"))
+            code, s.digits = (s.digits + heard) or None, ""
+            code = otp_in(code or "")
             if code and code == otp.get("code") and time.monotonic() < otp.get("expires", 0):
                 if s.caller_phone:
                     link_number(self.tickets.engine, s.caller_phone, otp["customer_id"], otp["phone"])

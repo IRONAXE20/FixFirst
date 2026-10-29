@@ -47,7 +47,8 @@ def test_unregistered_caller_links_a_roommates_number_by_otp(env):
     otp = next(m for m in rows(env.engine, outbox) if m["kind"] == "T10a_otp_verify")
     code = otp["body"].split()[0]
     assert otp["to"] == "9000000002"
-    assert run(brain.respond("123")).speech == brain._phrase("otp_retry") if code != "123" else True
+    wrong = "000000" if code != "000000" else "111111"
+    assert run(brain.respond(wrong)).speech == brain._phrase("otp_retry")
     speech = run(brain.respond(" ".join(code))).speech
     assert speech.startswith(brain._phrase("otp_ok"))
     assert session.customer["id"] == "C2" and session.linked_by_otp
@@ -245,3 +246,18 @@ def test_numbers_in_devanagari_digits_and_english_words_in_hindi_script():
     from fixfirst.brain import phone_in
     assert phone_in("९००००००००१") == "9000000001"
     assert phone_in("नाइन ज़ीरो ज़ीरो ज़ीरो ज़ीरो ज़ीरो ज़ीरो ज़ीरो ज़ीरो वन") == "9000000001"
+
+
+def test_a_number_and_otp_said_in_pieces_are_put_together(env, monkeypatch):
+    # Live call 29 Oct: "99।" then "249।" each counted as a failed try, and the call went to a ticket.
+    monkeypatch.setattr(env.tenant.__class__, "in_human_hours", lambda self, at=None: False)
+    brain, session, _ = env.make([], customer=None, channel="phone", phone="+91 98111 22233")
+    run(brain.respond("मेरा एसी ठंडा नहीं कर रहा।"))
+    run(brain.respond("हाँ किसी और के नंबर से है।"))
+    assert run(brain.respond("90।")).speech == brain._phrase("go_on")
+    assert run(brain.respond("000।")).speech == brain._phrase("go_on")
+    assert run(brain.respond("00002")).speech == brain._phrase("otp_sent")
+    code = next(m for m in rows(env.engine, outbox) if m["kind"] == "T10a_otp_verify")["body"].split()[0]
+    assert run(brain.respond(code[:3])).speech == brain._phrase("go_on")
+    assert run(brain.respond(code[3:])).speech.startswith(brain._phrase("otp_ok"))
+    assert session.customer["id"] == "C2" and not session.handed_off
