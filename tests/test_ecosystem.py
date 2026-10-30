@@ -599,6 +599,17 @@ def test_no_anything_else_after_a_short_go_on(env):
     assert run(brain.respond("aur ek mera")).speech == "जी, बताइए।"
 
 
+def test_no_anything_else_after_the_models_own_question(env):
+    # Live call 31 Oct: "कौन सी मशीन है, washing machine है या water purifier? बताइए। और कुछ मदद चाहिए?"
+    question = "कौन सी मशीन है, washing machine है या water purifier? बताइए।"
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("say", text=question, language="hi")]),
+    ])
+    run(brain.respond("AC thanda nahi kar raha"))
+    assert run(brain.respond("machine bhi kharab hai")).speech == question
+
+
 def test_going_to_the_appliance_in_a_minute_waits_and_offers_whatsapp(env):
     # User, 30 Oct: "दो मिनट में जाता हूँ" should get "पहुँच कर बता दीजिए, या WhatsApp पर भेज दूँ", not the steps on WhatsApp.
     ac = get_library().for_appliance("ac")

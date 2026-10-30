@@ -969,9 +969,10 @@ class Brain:
             self.s.stalls = 0
         elif own_words:
             speech = own_words
-            # Not after a short "go on" ("जी, बताइए।"): the caller is in the middle of telling us more.
+            # Not after a short "go on" ("जी, बताइए।"): the caller is in the middle of telling us more. Not after
+            # a question either ("कौन सी मशीन है…? बताइए।", live call 31 Oct).
             if (self.s.closed and self.s.asked_anything_else and not self.s.end_requested and not self.s.handed_off
-                    and not speech.rstrip().endswith("?") and len(speech) > 30):
+                    and "?" not in speech and len(speech) > 30):
                 speech = f"{speech} {self._phrase('anything_else')}"
             if self.s.run and not self.s.run.finished and not self.s.closed and not self.s.ticket:
                 self.s.stalls += 1
