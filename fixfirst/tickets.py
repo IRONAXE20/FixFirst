@@ -487,7 +487,8 @@ class TicketService:
                 continue
             visits = [i.get("appliance_label") or i.get("appliance") for i in self.items_of(t)
                       if i.get("result") in VISIT and i.get("call_id") == session.id]
-            product = " and ".join(dict.fromkeys(v for v in visits if v)) or None
+            names = list(dict.fromkeys(v for v in visits if v))   # "AC, fridge and washing machine"
+            product = (" and ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else names[0]) if names else None
             ticket = self._as_ticket(session, t)
             await self._notify_safely(session, ticket, customer=customer and bool(product), product=product)
 

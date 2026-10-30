@@ -369,6 +369,32 @@ def test_bolna_ticket_message_talked_over_is_recapped_not_read_again(phone):
     assert phone.llm.requests[-1]["messages"][-1]["content"] == "मेरे दोस्त का हाथ लग गया था।"
 
 
+def test_bolna_a_line_added_to_the_ticket_is_not_undone_when_talked_over(phone):
+    # Live call 31 Oct: AC booked, the fridge joined the ticket, and "वॉशिंग मशीन में भी" came over the fridge's
+    # reply. The fridge turn was undone (the call already had a ticket, so nothing seemed to change) and its
+    # replay read the whole ticket message again.
+    phone.llm.responses.extend([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="fridge", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="washer", symptom="unknown", language="hi")]),
+    ])
+    system = {"role": "system", "content": "FIXFIRST_CALL call_ref=exec-31 from=+919811122233"}
+    greet = {"role": "assistant", "content": "नमस्ते!"}
+    post = lambda msgs: _spoken(phone.post("/bolna/v1/chat/completions", headers=AUTH,
+                                           json={"model": "fixfirst", "messages": [system, greet] + msgs, "stream": True}))
+    u, a = (lambda t: {"role": "user", "content": t}), (lambda t: {"role": "assistant", "content": t})
+    ac = post([u("एसी कूलिंग कम कर रहा है।")])
+    fridge = post([u("एसी कूलिंग कम कर रहा है।"), a(ac), u("फ्रिज भी कूलिंग नहीं कर रहा।")])
+    assert "जोड़ दिया है" in fridge
+    washer = post([u("एसी कूलिंग कम कर रहा है।"), a(ac), u("फ्रिज भी कूलिंग नहीं कर रहा।"),
+                   u("वॉशिंग मशीन में भी दिक्कत है।")])
+    session = phone.app.state.store.get(next(iter(phone.app.state.bolna.calls.values())).session_id)
+    code = " ".join(session.earlier_tickets[-1]["code"].replace("-", ""))
+    assert washer.startswith(f"आपका ticket {code} raise हो गया है") and "ticket raise कर दिया है" not in washer
+    assert phone.llm.requests[-1]["messages"][-1]["content"] == "वॉशिंग मशीन में भी दिक्कत है।"
+    assert [i["appliance"] for i in session.earlier_tickets[-1]["summary"]["items"]] == ["ac", "fridge"]
+
+
 def test_bolna_end_call_tool_is_called_after_the_goodbye(phone):
     # Live calls 26 Oct: the goodbye was spoken but Bolna's hang-up check never fired, so the line stayed open.
     phone.llm.responses.append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", caller_requested=True,

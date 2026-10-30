@@ -113,9 +113,17 @@ def checkpoint(session) -> dict:
     return copy.deepcopy(session.__dict__, memo)
 
 
+def _ticket_changed(before: dict, session) -> bool:
+    """A new ticket, or a new line on the call's ticket (live call 31 Oct: the fridge joined the AC's ticket, the
+    turn was undone as if nothing happened, and its replay read the whole ticket message again)."""
+    lines = lambda t: (t or {}).get("summary", {}).get("items")
+    return bool(session.ticket) and (not before["ticket"] or lines(session.ticket) != lines(before["ticket"])
+                                     or len(session.earlier_tickets) != len(before["earlier_tickets"]))
+
+
 def _side_effects(before: dict, session) -> bool:
     """Did the turn do something that can't be taken back (a ticket, a safety alert, an ending)?"""
-    return bool((session.ticket and not before["ticket"]) or (session.hazard and not before["hazard"])
+    return bool(_ticket_changed(before, session) or (session.hazard and not before["hazard"])
                 or (session.closed and not before["closed"]) or (session.end_requested and not before["end_requested"]))
 
 
@@ -177,7 +185,7 @@ class BolnaBridge:
                     # A ticket can't be undone either, but its long message isn't read again (live call 30 Oct:
                     # the caller talked over it and heard all of it twice): answer the new words, with a
                     # one-line reminder of the ticket.
-                    recap = brain.ticket_recap() if session.ticket and not before["ticket"] else ""
+                    recap = brain.ticket_recap() if _ticket_changed(before, session) else ""
                     session.publish("interrupted", recapped=bool(recap))
                     call.checkpoint, call.last_words = checkpoint(session), words
                     result = await brain.respond(words)
