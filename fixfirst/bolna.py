@@ -24,6 +24,7 @@ from .rentbasket import mobile10
 IDLE_END_SECONDS = 20 * 60
 PENDING_SECONDS = 5 * 60   # how long a webhook-announced execution waits for its first conversation turn
 MARKER = "FIXFIRST_CALL"   # first word of the agent's system prompt (bolna_admin.py)
+MERGE_SECONDS = 120   # a conversation whose first words extend a call this recent is that call
 FINAL_STATUSES = {"completed", "no-answer", "busy", "failed", "canceled", "cancelled", "stopped", "error", "balance-low"}
 _HANGUP_CHECK = re.compile(r"hang ?up|cut the call|end the call|conversation (is )?(complete|over|ended)|\"hangup\"", re.I)
 _VAR = re.compile(r"\b(call_ref|from|to|customer_phone|customer_name)=(\S+)")
@@ -95,6 +96,7 @@ class BolnaCall:
     execution_id: str | None = None
     first_words: str = ""
     users_seen: int = 0
+    last_user: str = ""                 # the caller's latest message as Bolna last sent it
     last_speech: str = ""
     last_words: str = ""                # the caller's words behind last_speech
     checkpoint: dict | None = None      # session state from before last_speech's turn
@@ -142,17 +144,24 @@ class BolnaBridge:
         cv = call_vars(system)
         key = cv.get("call_ref") or self._fallback_key(convo)
         async with self._open_lock:   # two first requests for one call must not open two sessions
-            call = self.calls.get(key) or await self._open(key, cv, convo)
+            call = self._find(key, convo) or await self._open(key, cv, convo)
         async with call.lock:
             call.last_active = time.monotonic()
             brain = self.brain_for(self.store.get(call.session_id))
             fresh = users[call.users_seen:]
+            appended = False
+            if not fresh and users and call.last_user and users[-1] != call.last_user                     and users[-1].startswith(call.last_user):
+                # Bolna added the caller's next piece to their last message instead of a new one (live call
+                # 30 Oct: "आप किसी।" became "आप किसी। हाँ। हो सकती है।"): the extra words are new, and our reply
+                # to the first piece wasn't heard.
+                fresh, appended = [users[-1][len(call.last_user):].strip()], True
             new = [u for u in fresh if u]
             call.users_seen = len(users)
+            call.last_user = users[-1] if users else ""
             if not new:
                 return call.last_speech   # a re-ask without new words (silence nudge or retry)
             words = " ".join(new)
-            if call.last_speech and call.checkpoint and not self._was_heard(convo, call.last_speech, len(fresh)):
+            if call.last_speech and call.checkpoint and (appended or not self._was_heard(convo, call.last_speech, len(fresh))):
                 # Callers pause mid-sentence ("नहीं यार।" … "हाँ, सब कुछ नहीं है।"); Bolna sends each piece as a
                 # turn and drops our reply when they keep talking. That reply's step was never heard, so its
                 # piece wasn't an answer to it: undo the turn and answer the whole sentence instead.
@@ -172,10 +181,28 @@ class BolnaBridge:
             call.last_speech = result.speech
             return result.speech
 
+    def _find(self, key: str, convo: list[dict]) -> BolnaCall | None:
+        """The call this conversation belongs to. Without a call_ref the key hashes the caller's first message,
+        which changes when Bolna merges their opening pieces: then it's the recent call whose first words this
+        one extends (live call 30 Oct: one call became two sessions, and the real one never got its hang-up)."""
+        call = self.calls.get(key)
+        if call or not key.startswith("anon-"):
+            return call
+        first = next((_text(m.get("content")) for m in convo if m.get("role") == "user"), "")
+        now = time.monotonic()
+        for c in sorted(self.calls.values(), key=lambda c: c.last_active, reverse=True):
+            if (now - c.last_active < MERGE_SECONDS and c.first_words and first and c.key.startswith("anon-")
+                    and (first.startswith(c.first_words) or c.first_words.startswith(first))):
+                session = self.store.get(c.session_id)
+                if session and not session.ended:
+                    self.calls[key] = c
+                    return c
+        return None
+
     def _session_of(self, messages: list[dict]):
         system = next((_text(m.get("content")) for m in messages if m.get("role") == "system"), "")
         convo = [m for m in messages if m.get("role") in ("user", "assistant")]
-        call = self.calls.get(call_vars(system).get("call_ref") or self._fallback_key(convo))
+        call = self._find(call_vars(system).get("call_ref") or self._fallback_key(convo), convo)
         return self.store.get(call.session_id) if call else None
 
     def call_ends(self, messages: list[dict]) -> bool:

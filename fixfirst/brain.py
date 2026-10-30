@@ -23,7 +23,7 @@ from .knowledge import DocLibrary
 from .llm import ChatModel, LLMError, LLMResult, ToolCall
 from .playbooks import Node, PlaybookError, PlaybookLibrary, PlaybookRun
 from .safety import HAZARD_KINDS, SafetyScreen, physical_instruction, unsafe_instruction
-from .session import CallSession, appliance_name
+from .session import APPLIANCE_NAMES, CallSession, appliance_name
 from .tickets import RESULT_LABEL, VISIT, TicketService
 
 HISTORY_LIMIT = 40
@@ -427,6 +427,10 @@ PHRASES = {
         "hi": "मैंने आपका ticket raise कर दिया है, आपका ticket number है {code}। हमारी service team जल्दी आपको call करेगी। और कुछ मदद चाहिए?",
         "en": "I have raised a ticket for you; your ticket number is {code}. Our service team will call you shortly. Anything else I can help you with?",
     },
+    "handoff_later_added": {
+        "hi": "मैंने इसे भी आपके ticket में जोड़ दिया है। हमारी team {when} सुबह 9 बजे के बाद आपको call करेगी। और कुछ मदद चाहिए?",
+        "en": "I've added this to your ticket as well. Our team will call you {when} after 9 am. Anything else I can help you with?",
+    },
     "handoff_later": {
         "hi": "मैंने आपका ticket raise कर दिया है। हमारी team {when} सुबह 9 बजे के बाद आपको call करेगी। और कुछ मदद चाहिए?",
         "en": "I have raised a ticket for you. Our team will call you {when} after 9 am. Anything else I can help you with?",
@@ -800,7 +804,9 @@ class Brain:
             return self._phrase("handoff_soon", code=" ".join(ticket["code"].replace("-", "")))
         late = now_ist().hour >= self.tenant.human_hours[1]
         when = ("कल" if late else "आज") if s.language == "hi" else ("tomorrow" if late else "today")
-        return self._phrase("handoff_later", when=when)
+        # A second problem after the callback was promised goes on the same ticket (live call 30 Oct: the same
+        # "ticket raise कर दिया" line was said twice).
+        return self._phrase("handoff_later_added" if ticket.get("joined") else "handoff_later", when=when)
 
     async def voice_failure(self, reason: str) -> None:
         """Speech-to-text or text-to-speech is down mid-call: book a callback instead of leaving silence."""
@@ -903,8 +909,9 @@ class Brain:
             self.s.stalls = 0
         elif own_words:
             speech = own_words
+            # Not after a short "go on" ("जी, बताइए।"): the caller is in the middle of telling us more.
             if (self.s.closed and self.s.asked_anything_else and not self.s.end_requested and not self.s.handed_off
-                    and not speech.rstrip().endswith("?")):
+                    and not speech.rstrip().endswith("?") and len(speech) > 30):
                 speech = f"{speech} {self._phrase('anything_else')}"
             if self.s.run and not self.s.run.finished and not self.s.closed and not self.s.ticket:
                 self.s.stalls += 1
@@ -1034,7 +1041,8 @@ class Brain:
                               "Never a physical instruction.",
                        {"text": {"type": "string", "description": "One or two short spoken sentences"}, "language": lang},
                        ["text", "language"])]
-        appliances = sorted({r["appliance"] for r in self.s.rentals} | {pb.appliance for pb in self.library.playbooks.values()})
+        appliances = sorted({r["appliance"] for r in self.s.rentals} | {pb.appliance for pb in self.library.playbooks.values()}
+                            | set(APPLIANCE_NAMES) - {"washer_semi"})
         symptoms = sorted({sym for pb in self.library.playbooks.values() for sym in pb.symptoms} | {"unknown"})
         symptom_help = " | ".join(f"{pb.appliance}: " + ", ".join(f"{k} = {v}" for k, v in pb.symptoms.items())
                                   for pb in self.library.playbooks.values())
@@ -1628,7 +1636,10 @@ class Brain:
         if self.s.audit_required:
             lines.append("Possible misuse is flagged for the Auditing team. Never mention charges, fault or blame.")
         if self.s.handed_off:
-            lines.append("The call has been handed to a person (or a callback is promised). Reply briefly and kindly.")
+            lines.append("The call has been handed to a person (or a callback is promised). Reply briefly and kindly. "
+                         "If the caller reports a problem with any appliance (a TV or inverter too, even without "
+                         "guided steps), call start_troubleshooting so it goes on the ticket. Never say you noted "
+                         "something unless a tool recorded it.")
         if self.s.ticket:
             on_ticket = "; ".join(f"{i.get('appliance_label') or i.get('appliance')}: {RESULT_LABEL.get(i.get('result'), i.get('result'))}"
                                   f" ({(i.get('likely_cause') or '').split(' (')[0]})"

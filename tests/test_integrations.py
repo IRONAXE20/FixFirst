@@ -393,3 +393,29 @@ def test_test_callers_ring_in_as_a_demo_customer(phone):
     phone.post("/bolna/v1/chat/completions", json=body, headers=AUTH)
     session = next(s for s in phone.app.state.store.sessions.values() if s.caller_phone and "9811111111" in s.caller_phone)
     assert session.customer["id"] == "C1" and session.test_call
+
+
+def test_bolna_merging_the_callers_first_pieces_stays_one_call(phone):
+    # Live call 30 Oct: "आप किसी।" then Bolna sent "आप किसी। हाँ। …" as the first message; the conversation hash
+    # changed, a second session opened, the hang-up reached the first one, and no WhatsApp went out.
+    from fixfirst.bolna import webhook_token
+    hook = f"/bolna/webhook/{webhook_token('ff_test')}"
+    phone.post(hook, json={"id": "exec-77", "status": "initiated", "telephony_data": {"from_number": "+919810000000"}})
+    system = "FIXFIRST_CALL call_ref={execution_id}"
+    greet = {"role": "assistant", "content": "नमस्ते! बताइए, क्या problem है?"}
+    post = lambda first: phone.post("/bolna/v1/chat/completions", headers=AUTH, json={
+        "model": "fixfirst", "stream": True,
+        "messages": [{"role": "system", "content": system}, greet, {"role": "user", "content": first}]})
+    phone.llm.responses.extend([
+        LLMResult(tool_calls=[call("say", text="जी, बताइए।", language="hi")]),
+        LLMResult(tool_calls=[call("escalate_to_technician", reason="AC not cooling", language="hi")]),
+    ])
+    post("आप किसी।")
+    post("आप किसी। हाँ। मेरा AC ठंडा नहीं कर रहा।")
+    sessions = {c.session_id for c in phone.app.state.bolna.calls.values()}
+    assert len(sessions) == 1
+    session = phone.app.state.store.get(sessions.pop())
+    assert "आप किसी। हाँ। मेरा AC ठंडा नहीं कर रहा।" in [m["text"] for m in session.transcript if m["role"] == "user"]
+    assert session.ticket
+    phone.post(hook, json={"id": "exec-77", "status": "completed"})
+    assert [m for m in phone.get("/api/outbox").json() if m["audience"] == "customer"]   # held WhatsApp went out

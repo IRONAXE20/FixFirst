@@ -496,3 +496,58 @@ def test_fixing_one_appliance_while_another_is_booked_doesnt_say_the_ticket_is_c
     assert "ticket close" not in speech and speech.startswith(brain._phrase("resolved_other", others="Single door fridge 190 L"))
     [t] = rows(env.engine, tickets)
     assert t["status"] == "PARTIALLY_RESOLVED"
+
+
+def test_a_spark_after_a_fix_keeps_the_fix_on_the_ticket_line(env):
+    # Live call 30 Oct: AC fixed on the call, then "socket से चिंगारी": the line became URGENT and "fixed" was lost.
+    brain, session, _ = env.make(
+        [LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="hi")])]
+        + [LLMResult(tool_calls=[call("answer_step", outcome=o, language="hi")]) for o in ("near", "done", "done", "done", "fixed")])
+    for said in ("AC mein hawa kam hai", "haan", "kar diya", "nikal diye", "dho diye", "haan ab theek hai",
+                 "aur AC ke socket se chingari aa rahi hai"):
+        run(brain.respond(said))
+    [t] = rows(env.engine, tickets)
+    [line] = t["summary"]["items"]
+    assert t["status"] == "URGENT" and line["result"] == "urgent" and line["history"][0]["result"] == "self_fixed"
+    team = [m for m in rows(env.engine, outbox) if m["audience"] == "team"][-1]["body"]
+    assert "earlier: fixed on the call" in team
+
+
+def test_no_anything_else_after_a_short_go_on(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("say", text="जी, बताइए।", language="hi")]),
+    ])
+    run(brain.respond("AC thanda nahi kar raha"))
+    assert run(brain.respond("aur ek mera")).speech == "जी, बताइए।"
+
+
+def test_going_to_the_appliance_in_a_minute_waits_and_offers_whatsapp(env):
+    # User, 30 Oct: "दो मिनट में जाता हूँ" should get "पहुँच कर बता दीजिए, या WhatsApp पर भेज दूँ", not the steps on WhatsApp.
+    ac = get_library().for_appliance("ac")
+    brain, session, _ = _selffix_phone_call(env, ("going", "near"))
+    run(brain.respond("AC se hawa kam aa rahi hai"))
+    assert run(brain.respond("नहीं, दो मिनट में चला जाता हूँ")).speech == ac.node("ac04_wait").text("hi")
+    assert not session.closed
+    assert run(brain.respond("आ गया AC के पास")).speech == ac.node("ac04_off").text("hi")
+
+
+def test_after_hours_handoff_then_a_tv_and_an_unlisted_ac_issue_all_go_on_one_ticket(env, monkeypatch):
+    # Live call 30 Oct, 9 pm: "किसी इंसान से बात" got the after-hours callback, then "TV भी खराब" and "AC का remote"
+    # were only "noted" in words, and the second handoff repeated "ticket raise कर दिया".
+    monkeypatch.setattr(env.tenant.__class__, "in_human_hours", lambda self, at=None: False)
+    brain, session, llm = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="tv", symptom="unknown", language="hi")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="unknown", language="hi")]),
+        LLMResult(tool_calls=[call("answer_step", outcome="other", language="hi")]),
+    ])
+    first = run(brain.respond("किसी इंसान से बात हो सके"))
+    assert "ticket raise" in first.speech and session.handed_off
+    tools = {t["function"]["name"]: t for t in brain._tools()}
+    assert "tv" in tools["start_troubleshooting"]["function"]["parameters"]["properties"]["appliance"]["enum"]
+    run(brain.respond("मेरा TV भी खराब है"))
+    run(brain.respond("और AC का remote काम नहीं कर रहा"))
+    last = run(brain.respond("remote ke buttons kaam nahi karte")).speech
+    assert last.startswith(brain._phrase("handoff_later_added", when="कल").split("।")[0]) or "जोड़ दिया" in last
+    [t] = rows(env.engine, tickets)
+    assert {i.get("appliance") for i in t["summary"]["items"]} >= {"tv", "ac"}

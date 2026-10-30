@@ -254,7 +254,12 @@ class TicketService:
             if item["result"] == "urgent":
                 same["result"] = "urgent"
         elif same:
-            same.update(item)   # this appliance's latest result: a self-fix that went on to a booking, or the reverse
+            # This appliance's latest result (a self-fix that went on to a booking, or a spark after the fix); the
+            # earlier one stays for the team (live call 30 Oct: "fixed on the call" was lost under URGENT).
+            earlier = {k: same.get(k) for k in ("result", "likely_cause", "call_id") if same.get(k)}
+            same.update(item)
+            if earlier.get("result") != item["result"]:
+                same.setdefault("history", []).append(earlier)
         else:
             items.append(item)
         s["items"] = items
@@ -416,11 +421,13 @@ class TicketService:
         elif s.get("sla_hours"):
             lines.append(f"SLA: agree a visit time within {s['sla_hours']} h")
         items = s.get("items") or []
-        if len(items) > 1:
+        if len(items) > 1 or any(i.get("history") for i in items):
             lines.append("Appliances on this ticket:")
             for i in items:
                 lines.append(f"- {i.get('appliance_label') or i.get('appliance')}: {RESULT_LABEL.get(i.get('result'), i.get('result'))}"
-                             f" ({i.get('likely_cause')})")
+                             f" ({i.get('likely_cause')})"
+                             + "".join(f"; earlier: {RESULT_LABEL.get(h.get('result'), h.get('result'))}"
+                                       for h in i.get("history", [])))
         if s.get("problem"):
             lines.append(f"Problem: {s['problem']}")
         if code:
