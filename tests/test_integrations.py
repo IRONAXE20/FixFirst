@@ -349,6 +349,26 @@ def test_bolna_reply_the_caller_never_heard_is_undone_and_their_pieces_answered_
     assert [p["node"] for p in path] == ["triage", "ac04_near"]   # the "are you near it?" step answered once
 
 
+def test_bolna_ticket_message_talked_over_is_recapped_not_read_again(phone):
+    # Live call 30 Oct: the caller kept talking ("मेरे दोस्त का हाथ लग गया था") over the ticket message, Bolna
+    # appended it to their last message, and the whole ticket message was read a second time.
+    phone.llm.responses.extend([
+        LLMResult(tool_calls=[call("escalate_to_technician", reason="monitor broken", language="hi")]),
+        LLMResult(tool_calls=[call("add_note", note="A friend's hand hit it", language="hi")]),
+    ])
+    head = [{"role": "system", "content": SYSTEM}, {"role": "assistant", "content": "नमस्ते! बताइए, क्या problem है?"}]
+    post = lambda msgs: _spoken(phone.post("/bolna/v1/chat/completions", headers=AUTH,
+                                           json={"model": "fixfirst", "messages": msgs, "stream": True}))
+    first = post(head + [{"role": "user", "content": "उससे हाथ लग गया था।"}])
+    assert "ticket raise कर दिया है" in first
+    again = post(head + [{"role": "user", "content": "उससे हाथ लग गया था। मेरे दोस्त का हाथ लग गया था।"}])
+    session = phone.app.state.store.get(next(iter(phone.app.state.bolna.calls.values())).session_id)
+    code = " ".join(session.ticket["code"].replace("-", ""))
+    assert again.startswith(f"आपका ticket {code} raise हो गया है") and "ticket raise कर दिया है" not in again
+    assert "A friend's hand hit it" in session.ticket["summary"]["notes"]
+    assert phone.llm.requests[-1]["messages"][-1]["content"] == "मेरे दोस्त का हाथ लग गया था।"
+
+
 def test_bolna_end_call_tool_is_called_after_the_goodbye(phone):
     # Live calls 26 Oct: the goodbye was spoken but Bolna's hang-up check never fired, so the line stayed open.
     phone.llm.responses.append(LLMResult(tool_calls=[call("escalate_to_technician", reason="x", caller_requested=True,

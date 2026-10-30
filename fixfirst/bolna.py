@@ -166,11 +166,22 @@ class BolnaBridge:
                 # turn and drops our reply when they keep talking. That reply's step was never heard, so its
                 # piece wasn't an answer to it: undo the turn and answer the whole sentence instead.
                 session = brain.s
-                if _side_effects(call.checkpoint, session):
-                    # A ticket, alert or goodbye can't be undone: say it again so it's actually heard.
+                before = call.checkpoint
+                if (session.hazard and not before["hazard"]) or (session.end_requested and not before["end_requested"]):
+                    # A safety alert or goodbye can't be undone: say it again so it's actually heard.
                     session.say("user", words)
                     session.messages.append({"role": "user", "content": words})
                     session.publish("interrupted", repeated=True)
+                    return call.last_speech
+                if _side_effects(before, session):
+                    # A ticket can't be undone either, but its long message isn't read again (live call 30 Oct:
+                    # the caller talked over it and heard all of it twice): answer the new words, with a
+                    # one-line reminder of the ticket.
+                    recap = brain.ticket_recap() if session.ticket and not before["ticket"] else ""
+                    session.publish("interrupted", recapped=bool(recap))
+                    call.checkpoint, call.last_words = checkpoint(session), words
+                    result = await brain.respond(words)
+                    call.last_speech = f"{recap} {result.speech}".strip()
                     return call.last_speech
                 session.__dict__.update(call.checkpoint)
                 session.publish("interrupted", merged=call.last_words)

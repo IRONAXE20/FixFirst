@@ -418,6 +418,10 @@ PHRASES = {
         "hi": "मैं ये सारी details हमारी team को भेज रही हूँ, वो आपको update करेंगे।",
         "en": "I'm sending all these details to our team; they'll update you.",
     },
+    "ticket_recap": {
+        "hi": "आपका ticket {code} raise हो गया है, details WhatsApp पर आ जाएँगी।",
+        "en": "Your ticket {code} is raised; the details will come on WhatsApp.",
+    },
     "damaged": {
         "hi": "जब तक technician इसे देख न ले, कृपया इसे इस्तेमाल मत कीजिए।",
         "en": "Until the technician has checked it, please don't use it.",
@@ -516,6 +520,7 @@ HOW TO SPEAK
 - Reply in the caller's language. For Hindi or Hinglish, write Hindi in Devanagari script and keep English technical words (AC, filter, remote, MCB, error code, switch) in Latin script. For English, use simple Indian English.
 - Answer exactly what the caller just said, in one short sentence where you can. Don't repeat their words back, don't restate the whole situation, and don't talk about what you yourself can't do (you are a phone assistant; never say things like "I can't come to your home").
 - If the caller's message is only a fragment, cut off mid-sentence ("mera AC", "matlab woh"), reply only "जी, बताइए" (or "Yes, go on") so they can finish. Don't guess or start a new question.
+- Never say "playbook", "tool" or "ticket status" words to the caller, and don't ask how something broke: when they name an appliance, start it with start_troubleshooting (live call 30 Oct: "मॉनिटर के लिए अभी मेरे पास guided playbook नहीं है। ... कैसे टूटा है?").
 - Never say goodbye yourself ("आपका दिन शुभ हो", "अलविदा", "have a nice day", "goodbye"): the system says the goodbye, and the phone line hangs up when it hears one.
 - Never invent dates, times, prices, names or what the technician will do. For the visit, use only the promise below and the ticket details in CALL STATE.
 - Pass `language` ("hi" or "en"), matching the caller's latest message, to every tool. Hindi or Hinglish written in Roman script ("AC thanda nahi kar raha") is Hindi: use "hi". Use "en" only when the caller speaks English.
@@ -1496,6 +1501,10 @@ class Brain:
                   else "partial" if status == "PARTIALLY_RESOLVED" else "added" if ticket.get("joined")
                   else "escalated")
         return self._phrase(phrase, code=code, promise=promise)
+
+    def ticket_recap(self) -> str:
+        """One line for a ticket message the caller talked over, instead of the whole message again."""
+        return self._phrase("ticket_recap", code=" ".join(self.s.ticket["code"].replace("-", "")))
 
     async def _resolve(self, resolution: str, text: str) -> str:
         self.s.resolution = resolution
