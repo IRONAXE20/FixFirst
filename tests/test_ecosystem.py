@@ -442,3 +442,57 @@ def test_a_note_is_spoken_back_to_the_caller(env):
     ])
     run(brain.respond("AC thanda nahi kar raha"))
     assert run(brain.respond("aur awaaz bhi karta hai")).speech == brain._phrase("noted")
+
+
+def test_a_plain_no_with_a_danda_ends_the_call():
+    # Live call 30 Oct: "नहीं।" after "और कुछ मदद चाहिए?" looped: the danda counted as a Devanagari letter.
+    from fixfirst.brain import caller_is_done
+    assert caller_is_done("नहीं।") and caller_is_done("नहीं") and caller_is_done("ना।")
+
+
+def _selffix_phone_call(env, outcomes):
+    env.settings.whatsapp_templates, env.settings.identity_check = "ecosystem", False
+    return env.make(
+        [LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="hi")])]
+        + [LLMResult(tool_calls=[call("answer_step", outcome=o, language="hi")]) for o in outcomes],
+        channel="phone", phone="+91 90000 00001")
+
+
+def test_the_caller_can_carry_on_after_the_steps_went_to_whatsapp_and_then_none_are_sent(env):
+    # Live calls 30 Oct: after "steps WhatsApp पर भेज रही हूँ", "फ़िल्टर साफ़ हो गए, अब आगे क्या?" got "समझ नहीं पाई",
+    # and the steps went out although the AC was then fixed on the call.
+    brain, session, _ = _selffix_phone_call(env, ("near", "done", "done", "later", "done", "fixed"))
+    for said in ("AC se hawa kam aa rahi hai", "haan", "ho gaya", "ho gaya", "baad mein",
+                 "filter saaf ho gaye, ab aage kya karna hai?"):
+        speech = run(brain.respond(said)).speech
+    assert speech == get_library().for_appliance("ac").node("ac04_refit").text("hi")
+    run(brain.respond("haan ab theek chal raha hai"))
+    run(brain.respond("नहीं।"))
+    assert session.end_requested
+    [t] = rows(env.engine, tickets)
+    assert t["status"] == "RESOLVED_REMOTE"
+    assert not [m for m in rows(env.engine, outbox) if m["kind"].startswith("T2_")]   # fixed: no steps sent
+    assert not [f for f in rows(env.engine, followups) if f["kind"] == "check_back" and f["status"] == "pending"]
+
+
+def test_steps_still_go_on_whatsapp_after_the_goodbye_when_the_caller_does_it_later(env):
+    brain, session, _ = _selffix_phone_call(env, ("near", "done", "done", "later"))
+    for said in ("AC se hawa kam aa rahi hai", "haan", "ho gaya", "ho gaya", "baad mein sukhaunga"):
+        run(brain.respond(said))
+    assert not [m for m in rows(env.engine, outbox) if m["kind"].startswith("T2_")]
+    run(brain.respond("नहीं।"))
+    assert [m for m in rows(env.engine, outbox) if m["kind"] == "T2_selffix_AC-04"]
+
+
+def test_fixing_one_appliance_while_another_is_booked_doesnt_say_the_ticket_is_closed(env):
+    # Live call 30 Oct: AC booked, washer fixed on the call, and the agent said "मैं ticket close कर रही हूँ".
+    brain, session, _ = env.make(
+        [LLMResult(tool_calls=[call("start_troubleshooting", appliance="fridge", rental_id="R13", symptom="not_cooling", language="hi")]),
+         LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="hi")])]
+        + [LLMResult(tool_calls=[call("answer_step", outcome=o, language="hi")]) for o in ("near", "done", "done", "done", "fixed")])
+    for said in ("fridge thanda nahi kar raha", "AC mein hawa kam hai", "haan", "kar diya", "nikal diye", "dho diye"):
+        run(brain.respond(said))
+    speech = run(brain.respond("haan ab theek hai")).speech
+    assert "ticket close" not in speech and speech.startswith(brain._phrase("resolved_other", others="Single door fridge 190 L"))
+    [t] = rows(env.engine, tickets)
+    assert t["status"] == "PARTIALLY_RESOLVED"

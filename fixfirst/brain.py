@@ -85,7 +85,7 @@ _DONE = re.compile(r"\b(nothing|that'?s all|that is all|all good|no thanks?|than
                    r"bas|kuch nahi|kuchh nahi|nahi ji|bas itna|bas yahi|shukriya|dhanyavaad|dhanyawad|theek hai|thik hai|"
                    r"ok|okay|alvida)\b|बस|कुछ नहीं|धन्यवाद|शुक्रिया|थैंक|ठीक है|बाय|अलविदा|ओके")
 # A bare "no" counts only as the first word: "नहीं, धन्यवाद" is done, "मुश्किल नहीं हो जाएगा" ("it won't be hard") isn't.
-_DONE_NO = re.compile(r"^(no|nope|nahi|nahin|nai|na|नहीं|नही|ना)\b|^(नहीं|नही|ना)(?![ऀ-ॿ])")
+_DONE_NO = re.compile(r"^(no|nope|nahi|nahin|nai|na|नहीं|नही|ना)\b|^(नहीं|नही|ना)(?![\u0900-\u0963\u0966-\u097F])")
 _MORE = re.compile(r"\b(ac|fridge|frij|washing|machine|washer|tv|inverter|battery|purifier|stove|chulha|geyser|microwave|"
                    r"another|also|aur ek|ek aur|bhi|kharab|problem|issue|leak|band hai|chal nahi|nahi chal|kaam nahi|"
                    r"technician|kab|when|kitne)\b|एसी|फ्रिज|मशीन|टीवी|इन्वर्टर|बैटरी|प्यूरीफायर|स्टोव|चूल्हा|खराब|प्रॉब्लम|"
@@ -105,7 +105,7 @@ _ACTION_DONE = re.compile(r"(kar diya|kar di|kar diye|ho gaya|ho gayi|nikal diy
 
 # A sentence cut off mid-way ("नहीं मैं बोल रहा था कि।", live call 30 Oct): the caller is still talking.
 _UNFINISHED = re.compile(r"(\b(ki|ke|that|but|because|and|lekin|par|kyunki|matlab|mai|main|i)|"
-                         r"(?<![ऀ-ॿ])(कि|के|लेकिन|पर|क्योंकि|मतलब|और|मैं))\W*$")
+                         r"(?<![\u0900-\u0963\u0966-\u097F])(कि|के|लेकिन|पर|क्योंकि|मतलब|और|मैं))\W*$")
 
 
 def caller_is_done(text: str) -> bool:
@@ -135,7 +135,7 @@ def human_requested(text: str) -> bool:
 # Speech-to-text often writes English words in Devanagari ("यस", "ओके", "नो"): live call 29 Oct.
 _AFFIRM = re.compile(r"\b(haan|han|ha|haa|ji|jee|yes|yeah|yep|sahi|bilkul|correct|right|wahi|wohi|usi|same|theek|thik|ok|okay)\b"
                      r"|हाँ|हां|जी|सही|बिल्कुल|वही|उसी|ठीक|यस|येस|यप|ओके|ओक|राइट|करेक्ट")
-_DENY = re.compile(r"^\W*(no|nope|nahi|nahin|nai|na|galat|wrong)\b|^\W*(नहीं|नही|ना|गलत|नो|नोप)(?![ऀ-ॿ])"
+_DENY = re.compile(r"^\W*(no|nope|nahi|nahin|nai|na|galat|wrong)\b|^\W*(नहीं|नही|ना|गलत|नो|नोप)(?![\u0900-\u0963\u0966-\u097F])"
                    r"|\b(dusra|doosra|dusre|other one|another)\b|दूसर")
 _DIGIT_WORDS = {"zero": "0", "shunya": "0", "sunya": "0", "one": "1", "ek": "1", "two": "2", "do": "2", "three": "3",
                 "teen": "3", "four": "4", "char": "4", "chaar": "4", "five": "5", "paanch": "5", "panch": "5", "six": "6",
@@ -340,6 +340,10 @@ PHRASES = {
     "resolved_tail": {
         "hi": "और कुछ मदद चाहिए?",
         "en": "Anything else I can help you with?",
+    },
+    "resolved_other": {
+        "hi": "बहुत बढ़िया, ये ठीक हो गया! {others} के लिए technician की visit booked है, वो जल्दी आपसे contact करेंगे।",
+        "en": "Great, that's fixed! The technician visit for your {others} is still booked, and they'll contact you soon.",
     },
     "resolved_generic": {
         "hi": "बहुत बढ़िया! मैं ticket close कर रही हूँ। कल हम WhatsApp पर check करेंगे।",
@@ -664,7 +668,7 @@ class Brain:
         else:
             result = await self._llm_turn(timing)
         self._finish_turn(result.speech, started, timing)
-        if self.s.end_requested and self.s.held_notifications:   # the goodbye: one WhatsApp for the whole call
+        if self.s.end_requested and (self.s.held_notifications or self.s.held_steps):   # the goodbye: one WhatsApp for the call
             self._background(self.tickets.send_held(self.s))
         while self._pending_sends:
             await self._pending_sends.pop(0)
@@ -819,7 +823,7 @@ class Brain:
                     self.s, 0, "disconnected",
                     f"{self.tenant.name} FixFirst: looks like our call about your {name} got cut. "
                     f"Reply here or call us back and we'll continue, or we can book a technician.")
-        if self.s.held_notifications:   # hung up before the goodbye
+        if self.s.held_notifications or self.s.held_steps:   # hung up before the goodbye
             await self.tickets.send_held(self.s)
         self.tickets.persist_call(self.s)
         self.s.publish("ended", outcome=self.s.outcome)
@@ -1051,8 +1055,9 @@ class Brain:
                                {"note": {"type": "string", "description": "Short note in English"}, "language": lang},
                                ["note", "language"]))
         run = self.s.run
-        if run and not run.finished and not self.s.closed:
-            node = run.node
+        resume = self._resumable()
+        if (run and not run.finished and not self.s.closed) or resume:
+            node = resume or run.node
             options = "; ".join(f"{o.id} = {o.label}" for o in node.outcomes.values())
             tools.append(_tool("answer_step", f"Record the caller's answer to the current step '{node.id}'. Options: {options}",
                                {"outcome": {"type": "string", "enum": list(node.outcomes)},
@@ -1189,7 +1194,25 @@ class Brain:
     async def _tool_say(self, args: dict, _presented: set[str]) -> dict:
         return {"result": "said", "own": (args.get("text") or "").strip()}
 
+    def _resumable(self) -> Node | None:
+        """The steps went to WhatsApp, and the call isn't over: the step that sent them, so the caller can carry on
+        now (live calls 30 Oct: "मैं AC के पास पहुँच गया, steps बता दो" got "समझ नहीं पाई")."""
+        run = self.s.run
+        if (self.s.closed and self.s.outcome == "followup" and run and run.finished and run.node.kind == "followup"
+                and run.path and not self.s.end_requested and not self.s.handed_off):
+            return run.playbook.node(run.path[-1]["node"])
+        return None
+
     async def _tool_answer_step(self, args: dict, presented_before: set[str]) -> dict:
+        resume = self._resumable()
+        if resume:
+            run = self.s.run
+            run.path.pop()
+            run.current = resume.id
+            self.s.closed, self.s.outcome, self.s.asked_anything_else = False, "in_progress", False
+            self.tickets.cancel_followups(self.s, "check_back")
+            presented_before = presented_before | {resume.id}   # the caller heard this step
+            self.s.publish("resumed", node=resume.id)
         run = self._require_run()
         node, outcome = run.node, args.get("outcome", "")
         quote = None
@@ -1398,7 +1421,7 @@ class Brain:
             ticket = await self.tickets.create(self.s, priority="normal", category="selffix",
                                                likely_cause=f"{self._kb_issue() or 'Self-fix'} in progress (customer finishing the steps)",
                                                status="SELF_FIX_IN_PROGRESS", notify=False)
-            if node.whatsapp:   # T2 selffix_steps_<issue>
+            if node.whatsapp:   # T2 selffix_steps_<issue>; on a phone call, after the goodbye (see send_held)
                 self._background(self.tickets.send_selffix_steps(self.s, node.whatsapp, ticket))
             self.tickets.schedule_followup(self.s, node.followup_minutes or 30, "check_back",
                                            f"{self.tenant.name} FixFirst: checking in on your {name}. Is it working now? "
@@ -1454,10 +1477,15 @@ class Brain:
         self.s.resolution = resolution
         name = appliance_name(self.s.appliance, "en")
         # Self-fix worked: a RESOLVED_REMOTE ticket ("Main ticket close kar rahi hoon"), checked on WhatsApp at 24 h.
-        await self.tickets.create(self.s, priority="normal", category="selffix",
-                                  likely_cause=f"{self._kb_issue() or 'Problem'} fixed by the customer on the call",
-                                  status="RESOLVED_REMOTE", notify=False)
+        ticket = await self.tickets.create(self.s, priority="normal", category="selffix",
+                                           likely_cause=f"{self._kb_issue() or 'Problem'} fixed by the customer on the call",
+                                           status="RESOLVED_REMOTE", notify=False)
         text = text or self._phrase("resolved_generic")
+        visits = [i.get("appliance_label") or i.get("appliance") for i in self.tickets.items_of(ticket)
+                  if i.get("result") in VISIT]
+        if visits:   # live call 30 Oct: "ticket close कर रही हूँ" while the AC's visit on it was still open
+            text = self._phrase("resolved_other", others=" और ".join(dict.fromkeys(visits)) if self.s.language == "hi"
+                                else " and ".join(dict.fromkeys(visits)))
         self.tickets.schedule_followup(
             self.s, self.tenant.followup_hours * 60, "still_working",
             f"Hi {self.s.first_name or 'there'}, your {name} was fixed on the call with {self.tenant.name} FixFirst. "
@@ -1611,6 +1639,11 @@ class Brain:
                          "start_troubleshooting for it (it goes on the same ticket); never just say you noted it. add_note "
                          "only for more detail about a problem that already has a technician visit. If you aren't sure "
                          "which appliance the caller means (speech-to-text garbles names), ask.")
+        elif self._resumable():
+            node = self._resumable()
+            lines.append(f"The self-fix steps are going on WhatsApp, but the caller can still carry on now: if they say "
+                         f"they're doing it now, are at the appliance, or have finished a step, call answer_step for "
+                         f"step '{node.id}' (\"{node.text('en')}\") with their answer; it continues the steps on the call.")
         elif self.s.closed:
             lines.append(f"This problem is closed ({self.s.outcome}). Say goodbye unless the caller has another problem.")
         return "\n".join(lines)

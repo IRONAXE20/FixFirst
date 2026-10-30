@@ -38,8 +38,8 @@ nodes:
       en: "That usually means the inside needs a clean, which you can do at home. I'll take you through it step by step. Are you near the microwave right now?"
       hi: "इसका मतलब आमतौर पर अंदर सफ़ाई की ज़रूरत है, जो घर पर ही हो जाती है। मैं आपको step by step बताती हूँ। क्या आप अभी microwave के पास हैं?"
     outcomes:
-      near: {next: mw04_unplug, label: "Yes, near the microwave now"}
-      not_near: {next: steps_on_whatsapp, label: "Not near it, or would rather do it later"}
+      near: {next: mw04_unplug, label: "Yes, near the microwave now, or going to it right now ('जाता हूँ', 'abhi jaata hoon')"}
+      not_near: {next: steps_on_whatsapp, label: "Not near it and won't go now, or would rather do it later"}
     sources: [rentbasket_kb]
 
   mw04_unplug:
@@ -59,7 +59,7 @@ nodes:
       fixed: {next: resolved, label: "Yes, the smell is gone"}
       not_fixed: {next: esc_mw04, label: "No, it still smells"}
       partly: {next: partial_mw04, label: "Smell is less, but not fully gone"}
-      later: {next: steps_on_whatsapp, label: "Will clean it later"}
+      later: {next: steps_on_whatsapp, label: "Caller says they'll do it LATER / not now ('हो गया', 'done' or 'kar liya' is NOT later)"}
     sources: [rentbasket_kb]
 
   # ---- endings -----------------------------------------------------------------------

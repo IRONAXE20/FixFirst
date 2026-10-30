@@ -58,6 +58,7 @@ class CallSession:
     earlier_tickets: list = field(default_factory=list)   # tickets for other appliances booked earlier on this call
     # Phone calls: ticket WhatsApps held until the caller has nothing more to report (code -> message the customer?)
     held_notifications: dict = field(default_factory=dict)
+    held_steps: dict = field(default_factory=dict)   # appliance -> (KB issue, ticket code): T2 after the goodbye
     audit_required: bool = False       # possible misuse: the Auditing team reviews; never mention charges
     identity: str | None = None        # phone calls: None -> confirm | ask_other | await_number | await_otp -> done
     identity_tries: int = 0

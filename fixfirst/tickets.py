@@ -465,6 +465,13 @@ class TicketService:
     async def send_held(self, session: CallSession) -> None:
         """The call is over (goodbye or hang-up): send each held ticket's WhatsApps once, naming every appliance
         booked on this call."""
+        steps, session.held_steps = session.held_steps, {}
+        for appliance, (issue, code) in steps.items():
+            with self.engine.connect() as c:
+                t = row(c.execute(select(tickets).where(tickets.c.code == code)).first())
+            line = next((i for i in self.items_of(t or {}) if i.get("appliance") == appliance), None)
+            if t and line and line.get("result") == "self_fix_in_progress":   # not fixed or booked on the call
+                await self.send_selffix_steps(session, issue, self._as_ticket(session, t), held=True)
         held, session.held_notifications = session.held_notifications, {}
         for code, customer in held.items():
             with self.engine.connect() as c:
@@ -531,8 +538,12 @@ class TicketService:
             with self.engine.begin() as c:
                 c.execute(update(tickets).where(tickets.c.code == ticket["code"]).values(channels_used="both"))
 
-    async def send_selffix_steps(self, session: CallSession, issue: str, ticket: dict) -> None:
-        """T2 selffix_steps_<issue>: the KB steps on WhatsApp ("Did it work?" buttons on the template)."""
+    async def send_selffix_steps(self, session: CallSession, issue: str, ticket: dict, held: bool = False) -> None:
+        """T2 selffix_steps_<issue>: the KB steps on WhatsApp ("Did it work?" buttons on the template). On a phone
+        call they wait for the goodbye: the caller may carry on and fix it on the call (live call 30 Oct)."""
+        if session.channel == "phone" and not held:
+            session.held_steps[session.appliance] = (issue, ticket["code"])
+            return
         what, steps = SELF_FIX_STEPS[issue]
         name, _ = self._names(session)
         preview = (f"Hi {name}, here are the steps we discussed for {what}: "
@@ -566,6 +577,11 @@ class TicketService:
                                           [number, holder], preview=f"Thanks! {number} is now linked to the Rentbasket "
                                           f"account of {holder}. You can raise service requests from this number.",
                                           call_id=session.id)
+
+    def cancel_followups(self, session: CallSession, kind: str) -> None:
+        with self.engine.begin() as c:
+            c.execute(update(followups).where(followups.c.call_id == session.id, followups.c.kind == kind,
+                                              followups.c.status == "pending").values(status="cancelled"))
 
     def add_note(self, ticket: dict, note: str) -> None:
         ticket["summary"].setdefault("notes", []).append(note)

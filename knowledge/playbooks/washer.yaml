@@ -30,8 +30,8 @@ nodes:
       en: "This can often be fixed at home: it's usually a blocked filter where the water pipe joins the machine. I'll take you through it step by step. Are you near the machine right now?"
       hi: "ये अक्सर घर पर ही ठीक हो जाता है: आमतौर पर machine में पानी का pipe जहाँ जुड़ता है, वहाँ की filter बंद होती है। मैं आपको step by step बताती हूँ। क्या आप अभी machine के पास हैं?"
     outcomes:
-      near: {next: wm01_off, label: "Yes, near the machine now"}
-      not_near: {next: steps_on_whatsapp, label: "Not near it, or would rather do it later"}
+      near: {next: wm01_off, label: "Yes, near the machine now, or going to it right now ('जाता हूँ', 'abhi jaata hoon')"}
+      not_near: {next: steps_on_whatsapp, label: "Not near it and won't go now, or would rather do it later"}
     sources: [rentbasket_kb]
 
   wm01_off:
@@ -49,7 +49,7 @@ nodes:
       hi: "अब machine के पीछे से inlet pipe, यानी नल से पानी लाने वाला pipe, घुमा कर खोल दीजिए। खुल जाए तो बताइए।"
     outcomes:
       done: {next: wm01_filter, label: "Inlet pipe unscrewed"}
-      later: {next: steps_on_whatsapp, label: "Will do it later"}
+      later: {next: steps_on_whatsapp, label: "Caller says they'll do it LATER / not now ('हो गया', 'done' or 'kar liya' is NOT later)"}
       cant_do: {next: esc_wm01, label: "Can't unscrew it or reach it"}
     sources: [rentbasket_kb]
 
@@ -59,7 +59,7 @@ nodes:
       hi: "Inlet के अंदर एक छोटी जाली वाली filter होती है। उसे बाहर निकालिए और बहते पानी में साफ़ कर लीजिए। साफ़ हो जाए तो बताइए।"
     outcomes:
       done: {next: wm01_refit, label: "Filter cleaned"}
-      later: {next: steps_on_whatsapp, label: "Will do it later"}
+      later: {next: steps_on_whatsapp, label: "Caller says they'll do it LATER / not now ('हो गया', 'done' or 'kar liya' is NOT later)"}
       cant_do: {next: esc_wm01, label: "Can't find it or take it out"}
     sources: [rentbasket_kb]
 
