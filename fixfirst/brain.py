@@ -108,6 +108,11 @@ _UNFINISHED = re.compile(r"(\b(ki|ke|that|but|because|and|lekin|par|kyunki|matla
                          r"(?<![\u0900-\u0963\u0966-\u097F])(कि|के|लेकिन|पर|क्योंकि|मतलब|और|मैं))\W*$")
 
 
+# The model's own wording of "anything else?" at the end of a closed problem.
+_ANYTHING_MORE = re.compile(r"(कुछ और|और कुछ|anything else|anything more|something else|kuch aur|aur kuch)[^?।.]*\?\s*$",
+                            re.IGNORECASE)
+
+
 def caller_is_done(text: str) -> bool:
     """After "anything else?": a short no / thanks / bye, with no new appliance or problem in it."""
     t = text.lower().strip()
@@ -830,6 +835,14 @@ class Brain:
         if self.s.ended:
             return
         self.s.ended = True
+        if self.s.outcome == "in_progress" and self.s.run and not self.s.run.finished and self.s.earlier_tickets:
+            # Another appliance was booked earlier on this call: this one joins that ticket, and the WhatsApp.
+            name = appliance_name(self.s.appliance, "en")
+            await self.tickets.create(self.s, priority="normal", category="technician",
+                                      likely_cause=f"Call ended before the {name} steps were done (stopped at "
+                                                   f"step '{self.s.run.current}')",
+                                      technician_note="Ask the customer what's wrong with it", reason=None)
+            self.s.outcome = "escalated"
         if self.s.outcome == "in_progress":
             self.s.outcome = "abandoned"
             if self.s.run and not self.s.run.finished:
@@ -1207,6 +1220,8 @@ class Brain:
             speech = await self._hazard(triage.outcomes[symptom].hazard, source="playbook",
                                         evidence=triage.outcomes[symptom].label)
             return {"result": "hazard handled", "speak": speech, "closing": True}
+        if self.s.damage:
+            return await self._book_damage(self.s.damage)
         node = self.s.run.start(symptom)
         if node.terminal:   # an issue that is always a ticket (KB "ACTION = TICKET"): book it now
             return await self._arrive(node)
@@ -1375,14 +1390,22 @@ class Brain:
         evidence = args.get("evidence") or ""
         self.s.publish("misuse", evidence=evidence)
         prefix = self._phrase("misuse") if first else None
-        if args.get("physically_damaged") and self.s.appliance and not self.s.ticket and not self.s.closed:
-            closing = await self._escalate(likely_cause="Physical damage reported (possible misuse, for audit)",
-                                           technician_note=f"Caller says: {evidence}" if evidence else None,
-                                           reason=evidence or None)
-            return {"result": "flagged for the Auditing team; technician booked", "prefix": prefix,
-                    "speak": f"{self._phrase('damaged')} {closing}", "closing": True}
+        if args.get("physically_damaged"):
+            if self.s.appliance and not self.s.ticket and not self.s.closed:
+                return {**await self._book_damage(evidence), "prefix": prefix}
+            # The appliance isn't known yet: its visit is booked when start_troubleshooting names it.
+            self.s.damage = evidence or "physical damage"
         return {"result": "flagged for the Auditing team; carry on with the playbook (never mention charges)",
                 "prefix": prefix}
+
+    async def _book_damage(self, evidence: str) -> dict:
+        """Dropped, hit, broken or wet: no self-fix steps for a damaged unit, a technician visit for audit."""
+        self.s.damage = None
+        closing = await self._escalate(likely_cause="Physical damage reported (possible misuse, for audit)",
+                                       technician_note=f"Caller says: {evidence}" if evidence else None,
+                                       reason=evidence or None)
+        return {"result": "flagged for the Auditing team; technician booked",
+                "speak": f"{self._phrase('damaged')} {closing}", "closing": True}
 
     async def _tool_add_note(self, args: dict, _presented: set[str]) -> dict:
         note = (args.get("note") or "").strip()
@@ -1547,7 +1570,8 @@ class Brain:
         """Was "anything else?" the last thing we said? (A "नहीं" may answer a different question: live call 30 Oct.)"""
         last = next((m["content"] for m in reversed(self.s.messages)
                      if m["role"] == "assistant" and isinstance(m.get("content"), str)), "")
-        return any(p in last for p in PHRASES["anything_else"].values())
+        return (any(p in last for p in PHRASES["anything_else"].values())
+                or bool(self.s.closed and _ANYTHING_MORE.search(last)))
 
     def _close(self, outcome: str) -> None:
         self.s.outcome = outcome

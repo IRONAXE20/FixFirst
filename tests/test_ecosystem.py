@@ -435,6 +435,49 @@ def test_a_hang_up_before_the_goodbye_still_sends_the_held_whatsapp(env):
     assert [m for m in rows(env.engine, outbox) if m["audience"] == "customer"]
 
 
+def test_an_appliance_started_after_a_ticket_joins_it_when_the_caller_hangs_up(env):
+    # Live call 31 Oct: AC booked, then "फ्रिज भी खराब है", the fridge's first question, and a hang-up: the
+    # WhatsApp said only "your AC" and the fridge never reached the ticket.
+    env.settings.whatsapp_templates, env.settings.identity_check = "ecosystem", False
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="fridge", rental_id="R13", symptom="unknown", language="hi")]),
+    ], channel="phone", phone="+91 90000 00001")
+    run(brain.respond("AC thanda nahi kar raha"))
+    run(brain.respond("fridge bhi kharab hai"))
+    run(brain.on_hangup())
+    [t] = rows(env.engine, tickets)
+    assert [i["appliance"] for i in t["summary"]["items"]] == ["ac", "fridge"]
+    [msg] = [m for m in rows(env.engine, outbox) if m["kind"] == "T1_technician_booked"]
+    assert " and " in msg["body"] and session.outcome == "escalated"
+
+
+def test_no_after_the_models_own_anything_more_question_gets_the_goodbye(env):
+    # Live call 31 Oct: "क्या आप माइक्रोवेव के बारे में कुछ और बताना चाहते हैं?" "नहीं बस।" got no goodbye.
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("escalate_to_technician", reason="microwave broken", language="hi")]),
+        LLMResult(tool_calls=[call("say", text="क्या आप माइक्रोवेव के बारे में कुछ और बताना चाहते हैं?", language="hi")]),
+    ], customer="C3")
+    run(brain.respond("microwave kharab hai"))
+    run(brain.respond("mebals"))
+    run(brain.respond("नहीं बस।"))
+    assert session.end_requested
+
+
+def test_damage_said_before_the_appliance_is_known_still_books_the_visit(env):
+    # Live call 31 Oct: "मेरे माइक्रोवेव को बच्चे ने गिरा दिया है" in one sentence: the flag came before the
+    # microwave was started, so it ran the triage and handed off instead.
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("flag_possible_misuse", evidence="child dropped the microwave", physically_damaged=True,
+                                   language="hi"),
+                              call("start_troubleshooting", appliance="microwave", symptom="unknown", language="hi")]),
+    ], customer="C3")
+    speech = run(brain.respond("mere microwave ko bachche ne gira diya hai")).speech
+    assert speech.startswith(f"{brain._phrase('misuse')} {brain._phrase('damaged')}")
+    assert session.ticket["audit_required"] and "Physical damage" in session.ticket["summary"]["likely_cause"]
+    assert not session.handed_off and session.damage is None
+
+
 def test_a_new_problem_on_an_appliance_that_only_had_self_fix_steps_books_its_visit(env):
     # Live call 30 Oct: AC filter steps sent to WhatsApp, fridge booked, then "AC भी कूलिंग नहीं कर रहा" was only
     # noted, so the AC line still said "customer doing the self-fix".

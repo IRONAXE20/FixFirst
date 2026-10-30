@@ -60,6 +60,7 @@ class CallSession:
     held_notifications: dict = field(default_factory=dict)
     held_steps: dict = field(default_factory=dict)   # appliance -> (KB issue, ticket code): T2 after the goodbye
     audit_required: bool = False       # possible misuse: the Auditing team reviews; never mention charges
+    damage: str | None = None          # physical damage reported before the appliance was known: book its visit
     identity: str | None = None        # phone calls: None -> confirm | ask_other | await_number | await_otp -> done
     identity_tries: int = 0
     otp: dict | None = None            # {"code", "customer_id", "phone", "tries", "expires"}
