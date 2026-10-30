@@ -418,6 +418,10 @@ PHRASES = {
         "hi": "मैं ये सारी details हमारी team को भेज रही हूँ, वो आपको update करेंगे।",
         "en": "I'm sending all these details to our team; they'll update you.",
     },
+    "damaged": {
+        "hi": "जब तक technician इसे देख न ले, कृपया इसे इस्तेमाल मत कीजिए।",
+        "en": "Until the technician has checked it, please don't use it.",
+    },
     # Human handoff lines.
     "handoff_now": {
         "hi": "मैं आपको हमारी service team से connect कर रही हूँ।",
@@ -523,7 +527,7 @@ WHAT YOU MAY DO
 - You may chat briefly, show empathy, clarify what the caller means, and answer questions about the call.
 
 FLOW
-1. Find out which appliance or furniture item (sofa, bed, dining table) has the problem. If the customer rents one of that type, call start_troubleshooting with it (the system confirms the product with the caller). If they rent several of that type, ask which one with `say`, naming them, like "आपके पास दो AC हैं, एक Voltas और एक Lloyd। किस वाले में problem है?". Pass the symptom if the caller already described it. If you're not sure which issue the caller means, confirm it first in one short question, like "मतलब fridge से आगे से पानी आ रहा है, सही समझा?".
+1. Find out which appliance or furniture item (sofa, bed, dining table) has the problem. As soon as you know it, call start_troubleshooting, with symptom "unknown" if the caller hasn't said what's wrong (its first step asks; don't ask that yourself). If the customer rents one of that type, call start_troubleshooting with it (the system confirms the product with the caller). If they rent several of that type, ask which one with `say`, naming them, like "आपके पास दो AC हैं, एक Voltas और एक Lloyd। किस वाले में problem है?". Pass the symptom if the caller already described it. If you're not sure which issue the caller means, confirm it first in one short question, like "मतलब fridge से आगे से पानी आ रहा है, सही समझा?".
 2. After each step, call answer_step with the outcome that matches the caller's reply. If the reply is unclear, ask a short question with `say`; if they don't understand the step, call explain_step.
    Only answer a step after the caller has replied to it, with one exception: if CALL STATE shows a step that hasn't been read to the caller yet, and the caller's own words earlier in this call already answer that exact step (for example they said "abhi power cut hai, inverter pe chal raha hai" before being asked about backup power), you may answer it without asking. Then you must pass `caller_said`: the words that answer it, copied exactly from the caller's message, in the same script and spelling (don't translate, transliterate or paraphrase). Words about a different check don't count (a wall switch being on says nothing about the MCB). If in doubt, don't skip: the step will be read to the caller. The system checks the quote, and never skips the safety question.
    For the safety question, choose the no-hazard answer only if the caller actually said there is no smell, sparks, smoke or water. Never assume it from unrelated details; if they answered something else, ask again with `say`.
@@ -545,7 +549,7 @@ These are NOT hazards on their own; keep following the playbook, which covers th
 - Water leaking from an AC, fridge or washing machine is a playbook fault unless it is near a plug, socket, board or wires.
 
 POSSIBLE MISUSE
-If the damage may have come from how the item was used (it was dropped, hit or broken by someone, liquid was poured into it, the customer moved or opened it, a child or pet damaged it) or the caller asks whether they'll be charged, call flag_possible_misuse once, then carry on with the playbook as usual. Never decide or mention charges, fault or blame: the Auditing team reviews it and informs the customer.
+If the damage may have come from how the item was used (it was dropped, hit or broken by someone, liquid was poured into it, the customer moved or opened it, a child or pet damaged it) or the caller asks whether they'll be charged, call flag_possible_misuse once. If the item was physically damaged (dropped, hit, broken, liquid inside), set physically_damaged: the system books a technician, since self-fix steps don't fit a damaged unit. Otherwise carry on with the playbook as usual. Never decide or mention charges, fault or blame: the Auditing team reviews it and informs the customer.
 
 THINGS YOU DON'T DO
 - Don't discuss prices, deposits, damage charges, rent or refunds: say the {company} team will help with that.
@@ -1094,7 +1098,11 @@ class Brain:
             tools.append(_tool("flag_possible_misuse", "The damage may have come from how the item was used, or the caller "
                                                        "asks about charges. The Auditing team reviews it; never mention "
                                                        "charges or blame.",
-                               {"evidence": {"type": "string", "description": "The caller's words, short"}, "language": lang},
+                               {"evidence": {"type": "string", "description": "The caller's words, short"},
+                                "physically_damaged": {"type": "boolean",
+                                                       "description": "It was dropped, hit, broken or got liquid inside "
+                                                                      "(not just a question about charges)"},
+                                "language": lang},
                                ["evidence", "language"]))
         if not self.s.hazard:
             tools.append(_tool("flag_safety_concern", "The caller mentioned something possibly dangerous.",
@@ -1359,9 +1367,17 @@ class Brain:
     async def _tool_flag_possible_misuse(self, args: dict, _presented: set[str]) -> dict:
         first = not self.s.audit_required
         self.tickets.flag_audit(self.s)
-        self.s.publish("misuse", evidence=args.get("evidence") or "")
+        evidence = args.get("evidence") or ""
+        self.s.publish("misuse", evidence=evidence)
+        prefix = self._phrase("misuse") if first else None
+        if args.get("physically_damaged") and self.s.appliance and not self.s.ticket and not self.s.closed:
+            closing = await self._escalate(likely_cause="Physical damage reported (possible misuse, for audit)",
+                                           technician_note=f"Caller says: {evidence}" if evidence else None,
+                                           reason=evidence or None)
+            return {"result": "flagged for the Auditing team; technician booked", "prefix": prefix,
+                    "speak": f"{self._phrase('damaged')} {closing}", "closing": True}
         return {"result": "flagged for the Auditing team; carry on with the playbook (never mention charges)",
-                "prefix": self._phrase("misuse") if first else None}
+                "prefix": prefix}
 
     async def _tool_add_note(self, args: dict, _presented: set[str]) -> dict:
         note = (args.get("note") or "").strip()
@@ -1647,7 +1663,9 @@ class Brain:
             lines.append(f"Ticket {self.s.ticket['code']} ({self.s.ticket['status']}) is booked. On it: {on_ticket}. The call "
                          "is wrapping up: reassure and answer questions about next steps. A NEW problem with any appliance "
                          "(a different appliance, or a new symptom on one that only had self-fix steps): call "
-                         "start_troubleshooting for it (it goes on the same ticket); never just say you noted it. add_note "
+                         "start_troubleshooting for it right away, with symptom 'unknown' if they haven't said what's "
+                         "wrong (its first step asks), so it's on the same ticket even if the call drops; don't ask "
+                         "what's wrong yourself first, and never just say you noted it. add_note "
                          "only for more detail about a problem that already has a technician visit. If you aren't sure "
                          "which appliance the caller means (speech-to-text garbles names), ask.")
         elif self._resumable():

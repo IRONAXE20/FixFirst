@@ -115,6 +115,22 @@ def test_possible_misuse_is_flagged_for_audit_and_never_mentions_charges(env):
     assert "charge" not in speech.lower() and "paisa" not in speech.lower()
 
 
+def test_a_dropped_appliance_books_the_technician_for_audit(env):
+    # Live call 30 Oct: "बच्चे ने गिरा दिया है" got "Microwave में क्या problem है?" again, and no ticket.
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="microwave", symptom="unknown", language="hi")]),
+        LLMResult(tool_calls=[call("flag_possible_misuse", evidence="child dropped it", physically_damaged=True,
+                                   language="hi"),
+                              call("say", text="ठीक है, Microwave में क्या problem है?", language="hi")]),
+    ], customer="C3")
+    run(brain.respond("microwave kaam nahi kar raha"))
+    speech = run(brain.respond("bachche ne gira diya hai")).speech
+    assert speech.startswith(f"{brain._phrase('misuse')} {brain._phrase('damaged')}")
+    assert "क्या problem" not in speech
+    assert session.ticket["status"] == "TICKET_RAISED" and session.ticket["audit_required"] is True
+    assert "Physical damage" in session.ticket["summary"]["likely_cause"]
+
+
 # ---- the ticket lifecycle ----------------------------------------------------------------------
 def test_self_fix_on_whatsapp_is_a_self_fix_ticket_with_the_steps(env):
     brain, session, _ = env.make([
