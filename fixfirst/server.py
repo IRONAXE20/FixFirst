@@ -175,6 +175,10 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
     async def knowledge_page():
         return FileResponse(WEB_DIR / "knowledge.html")
 
+    @app.get("/flows", include_in_schema=False)
+    async def flows_page():
+        return FileResponse(WEB_DIR / "flows.html")
+
     @app.get("/u/{token}", include_in_schema=False)
     async def upload_page(token: str):
         return FileResponse(WEB_DIR / "upload.html")

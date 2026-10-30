@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FixFirst Flows</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .tab { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; color: inherit; }
+    .tab.on { border-color: var(--brand); background: var(--brand-soft); font-weight: 650; }
+    .spacer { flex: 1; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12.5px; color: var(--ink-2); }
+    .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+    @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+    .chart { overflow: auto; padding: 12px; min-height: 300px; }
+    .chart svg { max-width: none !important; height: auto; }
+    .chart .node { cursor: pointer; }
+    .detail { padding: 14px 16px; position: sticky; top: 12px; }
+    .detail h3 { margin: 0 0 6px; font-size: 15px; }
+    .detail .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
+    .detail p { margin: 8px 0; font-size: 14px; white-space: pre-line; }
+    .detail .lang { font-size: 11px; font-weight: 700; color: var(--muted); margin-right: 6px; }
+    .detail ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="brand" href="/"><span class="brand-mark" id="logo"></span><span class="brand-name">FixFirst</span><span class="brand-tenant" data-tenant></span></a>
+    <span class="chip" id="status-chip"><span class="dot"></span>…</span>
+    <nav class="nav"><a href="/" data-page="call">Call</a><a href="/ops" data-page="ops">Ops</a><a href="/knowledge" data-page="knowledge">Knowledge</a><a href="/flows" data-page="flows">Flows</a></nav>
+  </div></header>
+  <main class="page stack">
+    <div class="banner info"><span>ℹ️</span><span><b>Each playbook as a flowchart</b>, drawn live from the playbooks the agent uses on calls. Boxes are what the agent says; arrows are the caller's possible answers. Click a box for its full wording.</span></div>
+    <div class="bar">
+      <div class="bar" id="tabs"></div>
+      <span class="spacer"></span>
+      <button class="tab" id="lang">हिंदी</button>
+    </div>
+    <div class="legend">
+      <span style="--c: var(--surface-2)">Agent asks</span>
+      <span style="--c: var(--ok-soft)">Fixed on the call</span>
+      <span style="--c: var(--info-soft)">Ticket (technician)</span>
+      <span style="--c: var(--warn-soft)">Steps on WhatsApp / partial</span>
+      <span style="--c: #ece4fb">Handed to a person</span>
+      <span style="--c: var(--danger-soft)">Safety</span>
+    </div>
+    <div class="layout">
+      <section class="card chart" id="chart"><p class="muted">Loading…</p></section>
+      <aside class="card detail" id="detail"><p class="muted">Click a box to see the exact words and where each answer goes.</p></aside>
+    </div>
+  </main>
+  <script type="module" src="/static/flows.js"></script>
+</body>
+</html>
