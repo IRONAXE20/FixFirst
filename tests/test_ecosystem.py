@@ -452,6 +452,24 @@ def test_an_appliance_started_after_a_ticket_joins_it_when_the_caller_hangs_up(e
     assert " and " in msg["body"] and session.outcome == "escalated"
 
 
+def test_an_appliance_named_but_never_started_goes_on_the_ticket_at_the_hang_up(env):
+    # Live call 31 Oct: "मेरे फ्रिज में भी दिक्कत है" got the model's own "फ्रिज में क्या दिक्कत है?" (no tool),
+    # then the hang-up: the fridge was lost.
+    env.settings.whatsapp_templates, env.settings.identity_check = "ecosystem", False
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("say", text="फ्रिज में क्या दिक्कत है, बताइए?", language="hi")]),
+    ], channel="phone", phone="+91 90000 00001")
+    run(brain.respond("मेरा एसी कूलिंग नहीं कर रहा"))
+    run(brain.respond("मेरे फ्रिज में भी। दिक्कत है।"))
+    run(brain.on_hangup())
+    [t] = rows(env.engine, tickets)
+    assert [i["appliance"] for i in t["summary"]["items"]] == ["ac", "fridge"]
+    assert "mentioned a problem with the fridge" in t["summary"]["items"][1]["likely_cause"]
+    [msg] = [m for m in rows(env.engine, outbox) if m["kind"] == "T1_technician_booked"]
+    assert " and " in msg["body"]
+
+
 def test_no_after_the_models_own_anything_more_question_gets_the_goodbye(env):
     # Live call 31 Oct: "क्या आप माइक्रोवेव के बारे में कुछ और बताना चाहते हैं?" "नहीं बस।" got no goodbye.
     brain, session, _ = env.make([

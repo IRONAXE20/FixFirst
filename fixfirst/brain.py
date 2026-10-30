@@ -99,7 +99,7 @@ _SAFETY_ACTION_Q = re.compile(
     r"रेगुलेटर|खिड़की|बाहर|छू")
 
 
-_ACTION_DONE = re.compile(r"(kar diya|kar di|kar diye|ho gaya|ho gayi|nikal diya|band hai|bahar aa gay\w*|done)|"
+_ACTION_DONE = re.compile(r"\b(kar diya|kar di|kar diye|ho gaya|ho gayi|nikal diya|band hai|bahar aa gay\w*|done)\b|"
                           r"कर दिया|कर दी|हो गया|हो गई|निकाल दिया|बंद है|बाहर आ गए|बाहर आ गई")
 
 
@@ -107,6 +107,19 @@ _ACTION_DONE = re.compile(r"(kar diya|kar di|kar diye|ho gaya|ho gayi|nikal diy
 _UNFINISHED = re.compile(r"(\b(ki|ke|that|but|because|and|lekin|par|kyunki|matlab|mai|main|i)|"
                          r"(?<![\u0900-\u0963\u0966-\u097F])(कि|के|लेकिन|पर|क्योंकि|मतलब|और|मैं))\W*$")
 
+
+# Appliances as callers say them (and speech-to-text writes them): a backstop for one named but never started.
+_SPOKEN_APPLIANCE = {a: re.compile(p, re.IGNORECASE) for a, p in {
+    "ac": r"\b(ac|a\.c\.?)\b|एसी|ए\.? ?सी",
+    "fridge": r"\b(fridge|frij|refrigerator)\b|फ्रिज|फ्रीज|रेफ्रिजरेटर",
+    "washer": r"\b(washing|washer)\b|वाशिंग|वॉशिंग",
+    "tv": r"\b(tv|television)\b|टीवी|टी\.? ?वी",
+    "microwave": r"\bmicrowave\b|माइक्रोवेव",
+    "geyser": r"\bgeyser\b|गीज़र|गीजर",
+    "inverter": r"\binverter\b|इन्वर्टर|इनवर्टर",
+    "water_purifier": r"\b(purifier|ro)\b|प्यूरीफायर|आरओ",
+    "stove": r"\b(stove|chulha)\b|स्टोव|चूल्हा",
+}.items()}
 
 # The model's own wording of "anything else?" at the end of a closed problem.
 _ANYTHING_MORE = re.compile(r"(कुछ और|और कुछ|anything else|anything more|something else|kuch aur|aur kuch)[^?।.]*\?\s*$",
@@ -843,6 +856,7 @@ class Brain:
                                                    f"step '{self.s.run.current}')",
                                       technician_note="Ask the customer what's wrong with it", reason=None)
             self.s.outcome = "escalated"
+        await self._book_mentioned()
         if self.s.outcome == "in_progress":
             self.s.outcome = "abandoned"
             if self.s.run and not self.s.run.finished:
@@ -855,6 +869,30 @@ class Brain:
             await self.tickets.send_held(self.s)
         self.tickets.persist_call(self.s)
         self.s.publish("ended", outcome=self.s.outcome)
+
+    async def _book_mentioned(self) -> None:
+        """The call ended after a ticket, with an appliance the caller named but no tool started (live call 31 Oct:
+        "मेरे फ्रिज में भी दिक्कत है" got the model's own "फ्रिज में क्या दिक्कत है?", then the hang-up): it goes on
+        the ticket for the team to ask about."""
+        booked = [t for t in (*self.s.earlier_tickets, self.s.ticket) if t]
+        if not booked or self.s.hazard:
+            return
+        known = {i.get("appliance") for t in booked for i in self.tickets.items_of(t)} | {self.s.appliance}
+        said = " ".join(m["text"] for m in self.s.transcript if m["role"] == "user")
+        for appliance, pattern in _SPOKEN_APPLIANCE.items():
+            if appliance in known or not pattern.search(said):
+                continue
+            if self.s.ticket:
+                self.s.earlier_tickets.append(self.s.ticket)
+            matches = self.s.rentals_of(appliance)
+            self.s.ticket, self.s.run, self.s.appliance = None, None, appliance
+            self.s.rental = matches[0] if len(matches) == 1 else None
+            name = appliance_name(appliance, "en")
+            await self.tickets.create(self.s, priority="normal", category="technician",
+                                      likely_cause=f"Caller mentioned a problem with the {name}; the call ended before "
+                                                   f"it was discussed",
+                                      technician_note="Ask the customer what's wrong with it", reason=None)
+            known.add(appliance)
 
     # ---- LLM turn --------------------------------------------------------------------
     async def _llm_turn(self, timing: dict) -> TurnResult:
