@@ -24,7 +24,7 @@ from .llm import ChatModel, LLMError, LLMResult, ToolCall
 from .playbooks import Node, PlaybookError, PlaybookLibrary, PlaybookRun
 from .safety import HAZARD_KINDS, SafetyScreen, physical_instruction, unsafe_instruction
 from .session import CallSession, appliance_name
-from .tickets import TicketService
+from .tickets import RESULT_LABEL, VISIT, TicketService
 
 HISTORY_LIMIT = 40
 STALL_LIMIT = 3
@@ -311,6 +311,10 @@ PHRASES = {
               "{promise} मैं details WhatsApp पर भेज रही हूँ। और कुछ मदद चाहिए?",
         "en": "This is the same appliance as your earlier ticket {code}, so I've reopened it as high priority. {promise} "
               "I'm sending the details on WhatsApp. Anything else I can help you with?",
+    },
+    "noted": {
+        "hi": "जी, मैंने ये भी ticket में नोट कर दिया है, technician इसे भी देखेंगे। और कुछ मदद चाहिए?",
+        "en": "Okay, I've noted that on the ticket as well, and the technician will check it too. Anything else I can help you with?",
     },
     # RentBasket: one ticket per customer. Another appliance goes on the customer's open ticket.
     "added": {
@@ -1124,9 +1128,13 @@ class Brain:
         if self.s.ticket:
             rental = self.s.rental_by_id(args.get("rental_id"))
             wanted = rental["appliance"] if rental else args.get("appliance")
-            if wanted == self.s.appliance:
-                raise PlaybookError("this appliance already has a ticket; use add_note for more about it")
-            self.s.earlier_tickets.append(self.s.ticket)   # the next appliance gets its own ticket
+            line = next((i for i in self.tickets.items_of(self.s.ticket) if i.get("appliance") == wanted), None)
+            if line and line.get("result") in VISIT:
+                raise PlaybookError("this appliance already has a technician visit on the ticket; use add_note for "
+                                    "more about it")
+            # Another appliance, or a new problem on one that's only had a self-fix (live call 30 Oct: "AC भी
+            # कूलिंग नहीं कर रहा" after the AC filter steps): run its playbook; the ticket line is updated.
+            self.s.earlier_tickets.append(self.s.ticket)
             self.s.ticket = None
         if self.s.closed:   # a second problem after a phone fix or a booked ticket
             self.s.closed, self.s.outcome, self.s.resolution, self.s.presented = False, "in_progress", None, set()
@@ -1329,7 +1337,8 @@ class Brain:
         if self.s.ticket and note:
             self.tickets.add_note(self.s.ticket, note)
             self.s.publish("note", note=note)
-        return {"result": "noted on the ticket; tell the caller the technician will look at it too"}
+        # Spoken, so a note never leaves the caller with "समझ नहीं पाई" (live call 30 Oct).
+        return {"result": "noted on the ticket", "speak": self._phrase("noted")}
 
     async def _tool_flag_safety_concern(self, args: dict, _presented: set[str]) -> dict:
         kind = args.get("kind") if args.get("kind") in HAZARD_KINDS else "electrical"
@@ -1593,11 +1602,15 @@ class Brain:
         if self.s.handed_off:
             lines.append("The call has been handed to a person (or a callback is promised). Reply briefly and kindly.")
         if self.s.ticket:
-            lines.append(f"Ticket {self.s.ticket['code']} ({self.s.ticket['status']}) is booked. The call is wrapping up: "
-                         "reassure and answer questions about next steps. A problem with a DIFFERENT appliance: call "
-                         "start_troubleshooting for it (it goes on the same ticket); never just say you noted it. More about the "
-                         "same appliance: add_note. If you aren't sure which appliance the caller means (speech-to-text "
-                         "garbles names), ask.")
+            on_ticket = "; ".join(f"{i.get('appliance_label') or i.get('appliance')}: {RESULT_LABEL.get(i.get('result'), i.get('result'))}"
+                                  f" ({(i.get('likely_cause') or '').split(' (')[0]})"
+                                  for i in self.tickets.items_of(self.s.ticket))
+            lines.append(f"Ticket {self.s.ticket['code']} ({self.s.ticket['status']}) is booked. On it: {on_ticket}. The call "
+                         "is wrapping up: reassure and answer questions about next steps. A NEW problem with any appliance "
+                         "(a different appliance, or a new symptom on one that only had self-fix steps): call "
+                         "start_troubleshooting for it (it goes on the same ticket); never just say you noted it. add_note "
+                         "only for more detail about a problem that already has a technician visit. If you aren't sure "
+                         "which appliance the caller means (speech-to-text garbles names), ask.")
         elif self.s.closed:
             lines.append(f"This problem is closed ({self.s.outcome}). Say goodbye unless the caller has another problem.")
         return "\n".join(lines)

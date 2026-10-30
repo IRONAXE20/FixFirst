@@ -417,3 +417,28 @@ def test_a_hang_up_before_the_goodbye_still_sends_the_held_whatsapp(env):
     assert not [m for m in rows(env.engine, outbox) if m["audience"] == "customer"]
     run(brain.on_hangup())
     assert [m for m in rows(env.engine, outbox) if m["audience"] == "customer"]
+
+
+def test_a_new_problem_on_an_appliance_that_only_had_self_fix_steps_books_its_visit(env):
+    # Live call 30 Oct: AC filter steps sent to WhatsApp, fridge booked, then "AC भी कूलिंग नहीं कर रहा" was only
+    # noted, so the AC line still said "customer doing the self-fix".
+    brain, session, _ = env.make(
+        [LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="weak_airflow", language="hi")])]
+        + [LLMResult(tool_calls=[call("answer_step", outcome=o, language="hi")]) for o in ("near", "done", "done", "later")]
+        + [LLMResult(tool_calls=[call("start_troubleshooting", appliance="fridge", rental_id="R13", symptom="not_cooling", language="hi")]),
+           LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")])])
+    for said in ("AC se hawa kam aa rahi hai", "haan saamne hoon", "kar diya", "nikal liye", "baad mein dhounga",
+                 "fridge mein cooling nahi ho rahi", "AC bhi theek se cooling nahi kar raha"):
+        speech = run(brain.respond(said)).speech
+    [t] = rows(env.engine, tickets)
+    assert {i["appliance"]: i["result"] for i in t["summary"]["items"]} == {"ac": "booked", "fridge": "booked"}
+    assert speech.endswith(brain._phrase("anything_else"))
+
+
+def test_a_note_is_spoken_back_to_the_caller(env):
+    brain, session, _ = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", rental_id="R11", symptom="not_cooling", language="hi")]),
+        LLMResult(tool_calls=[call("add_note", note="Also makes a noise", language="hi")]),
+    ])
+    run(brain.respond("AC thanda nahi kar raha"))
+    assert run(brain.respond("aur awaaz bhi karta hai")).speech == brain._phrase("noted")
