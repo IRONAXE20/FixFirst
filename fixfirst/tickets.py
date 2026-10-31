@@ -678,7 +678,8 @@ class TicketService:
             playbook_id=session.run.playbook.id if session.run else None, hazard=session.hazard,
             error_code=session.error_code, path=session.run.path if session.run else [],
             transcript=session.transcript, latency=session.latency,
-            ticket_code=(session.ticket or session.selffix_ticket or {}).get("code"), consent_notice="given")
+            ticket_code=(session.ticket or session.selffix_ticket or {}).get("code"), consent_notice="given",
+            guard_flags=session.guard_flags)
         try:
             with self.engine.begin() as c:
                 exists = c.execute(select(calls.c.id).where(calls.c.id == session.id)).first()

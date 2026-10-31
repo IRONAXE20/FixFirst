@@ -117,21 +117,32 @@ function renderCalls() {
       const med = lat.length ? lat.sort((a, b) => a - b)[Math.floor(lat.length / 2)] : null;
       const open = state.open === c.id;
       return `<tr class="row" data-call="${esc(c.id)}"><td class="small">${timeAgo(c.started_at)}</td><td>${esc(c.customer_name || "Unknown caller")}</td>
-        <td><span class="badge neutral">${esc(c.channel)}</span></td><td>${outcomeBadge(c.outcome)}${c.hazard ? ` <span class="badge bad">${esc(c.hazard)}</span>` : ""}</td>
+        <td><span class="badge neutral">${esc(c.channel)}</span></td><td>${outcomeBadge(c.outcome)}${c.hazard ? ` <span class="badge bad">${esc(c.hazard)}</span>` : ""}${guardBadges(c.guard_flags)}</td>
         <td class="small">${esc(c.playbook_id || "–")}</td><td>${(c.transcript || []).filter((t) => t.role === "user").length}</td>
         <td>${ms(med)}</td><td>${c.ticket_code ? `<a href="#ticket-${esc(c.ticket_code)}" data-goto-ticket="${esc(c.ticket_code)}">${esc(c.ticket_code)}</a>` : "–"}</td></tr>
         ${open ? `<tr class="detail-row"><td colspan="8">${callDetail(c)}</td></tr>` : ""}`;
     }).join("")}</tbody></table>`;
 }
 
+// Guardrail hits on a call: one badge per kind ("Injection attempt ×2").
+const GUARD_LABEL = { injection: "Injection attempt", staff_claim: "Staff claim", other_data: "Other's data",
+  abuse: "Abuse", off_topic: "Off-topic", output: "Reply blocked" };
+function guardBadges(flags) {
+  const n = {};
+  for (const f of flags || []) n[f.kind] = (n[f.kind] || 0) + 1;
+  return Object.entries(n).map(([k, v]) => ` <span class="badge ${k === "off_topic" ? "warn" : "bad"}" title="Guardrail">${esc(GUARD_LABEL[k] || k)}${v > 1 ? ` ×${v}` : ""}</span>`).join("");
+}
+
 function callDetail(c) {
   const lat = c.latency || [];
+  const flags = c.guard_flags || [];
   return `<div class="detail">
     <div><h3>Transcript</h3><div class="tx">${(c.transcript || []).map((t) => `<div class="${t.role === "agent" ? "a" : "u"}"><b>${t.role === "agent" ? "Agent" : "Caller"}:</b> ${esc(t.text)}</div>`).join("") || "<span class='muted'>Empty</span>"}</div></div>
     <div><h3>Playbook path</h3>${(c.path || []).length ? `<ol class="steps">${c.path.map((p) => `<li><span class="mono">${esc(p.node)}</span> → ${esc(p.label)}</li>`).join("")}</ol>` : "<div class='muted small'>No playbook steps</div>"}
       <h3 style="margin-top:12px">Latency per turn</h3>
       ${lat.length ? `<table class="table"><tr><th>#</th><th>Agent</th><th>LLM</th><th>STT</th><th>TTS</th><th>Voice-to-voice</th></tr>${lat.map((t) => `<tr><td>${t.turn}</td><td>${ms(t.brain_ms)}</td><td>${ms(t.llm_ms)}</td><td>${ms(t.stt_ms)}</td><td>${ms(t.tts_ms)}</td><td><b>${ms(t.voice_to_voice_ms)}</b></td></tr>`).join("")}</table>` : "<div class='muted small'>–</div>"}
       ${c.error_code ? `<h3 style="margin-top:12px">Error code</h3><div>${esc(c.error_code.code)} ${esc(c.error_code.brand || "")}</div>` : ""}
+      ${flags.length ? `<h3 style="margin-top:12px">Guardrails</h3><table class="table"><tr><th>Kind</th><th>By</th><th>Words</th></tr>${flags.map((f) => `<tr><td>${esc(GUARD_LABEL[f.kind] || f.kind)}</td><td class="small">${esc(f.by)}</td><td class="small">${esc(f.said || f.matched || "")}</td></tr>`).join("")}</table>` : ""}
     </div></div>`;
 }
 

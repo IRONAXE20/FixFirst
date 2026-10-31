@@ -61,6 +61,8 @@ class CallSession:
     held_steps: dict = field(default_factory=dict)   # appliance -> (KB issue, ticket code): T2 after the goodbye
     audit_required: bool = False       # possible misuse: the Auditing team reviews; never mention charges
     damage: str | None = None          # physical damage reported before the appliance was known: book its visit
+    guard_flags: list = field(default_factory=list)   # guardrail hits: {"kind", "by", "matched", "said", "at"}
+    abuse_count: int = 0               # abuse aimed at the agent; the third time a person takes over
     identity: str | None = None        # phone calls: None -> confirm | ask_other | await_number | await_otp -> done
     identity_tries: int = 0
     otp: dict | None = None            # {"code", "customer_id", "phone", "tries", "expires"}
