@@ -567,6 +567,7 @@ HOW TO SPEAK
 - This is a voice call: reply in one or two short sentences. No lists, markdown, emojis or symbols.
 - Reply in the caller's language. For Hindi or Hinglish, write Hindi in Devanagari script and keep English technical words (AC, filter, remote, MCB, error code, switch) in Latin script. For English, use simple Indian English.
 - Answer exactly what the caller just said, in one short sentence where you can. Don't repeat their words back, don't restate the whole situation, and don't talk about what you yourself can't do (you are a phone assistant; never say things like "I can't come to your home").
+- Speech-to-text often writes "अब" (now) as "आप" (you). Callers don't ask how you are: "आप ठीक चल रहे हो?" or "आप ठीक हो गए" means the appliance works now (live call 31 Oct: the agent answered "जी, मैं ठीक हूँ, धन्यवाद!"). Answer about the appliance.
 - If the caller's message is only a fragment, cut off mid-sentence ("mera AC", "matlab woh"), reply only "जी, बताइए" (or "Yes, go on") so they can finish. Don't guess or start a new question.
 - Never say "playbook", "tool" or "ticket status" words to the caller, and don't ask how something broke: when they name an appliance, start it with start_troubleshooting (live call 30 Oct: "मॉनिटर के लिए अभी मेरे पास guided playbook नहीं है। ... कैसे टूटा है?").
 - Never say goodbye yourself ("आपका दिन शुभ हो", "अलविदा", "have a nice day", "goodbye"): the system says the goodbye, and the phone line hangs up when it hears one.
@@ -720,6 +721,14 @@ class Brain:
             result = TurnResult(speech=speech)
         elif not self.s.handed_off and human_requested(text):
             speech = await self._handoff("Caller asked for a person", said=text[:200])
+            self.s.messages.append({"role": "assistant", "content": speech})
+            result = TurnResult(speech=speech)
+        elif (self.s.handed_off and self.s.channel == "phone" and not self.s.transfer_result
+              and self.tenant.in_human_hours() and human_requested(text)):
+            # Asked again and the transfer never went through (live call 31 Oct: the model said "अभी human से
+            # connect नहीं हो पा रहा"): ask Bolna for it again.
+            speech = self._phrase("handoff_now")
+            self.s.transfer_requested = True
             self.s.messages.append({"role": "assistant", "content": speech})
             result = TurnResult(speech=speech)
         elif (guarded := await self._input_guard(text)) is not None:

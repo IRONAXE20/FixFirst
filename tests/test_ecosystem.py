@@ -652,3 +652,15 @@ def test_without_the_identity_steps_an_unknown_number_goes_straight_to_the_probl
     speech = run(brain.respond("मेरे एसी में प्रॉब्लम आ रही है")).speech
     assert speech != brain._phrase("unregistered") and len(llm.requests) == 1 and session.appliance == "ac"
     assert not any(m["kind"] == "T10a_otp_verify" for m in rows(env.engine, outbox))
+
+
+def test_asking_for_a_person_again_before_the_transfer_went_through_transfers_again(env, monkeypatch):
+    monkeypatch.setattr(env.tenant.__class__, "in_human_hours", lambda self, at=None: True)
+    brain, session, llm = env.make([], channel="phone", phone="+91 98111 22233")
+    env.settings.identity_check = False
+    first = run(brain.respond("मुझे किसी इंसान से बात करनी है")).speech
+    assert first == brain._phrase("handoff_now") and session.transfer_requested
+    session.transfer_requested = False   # the bridge asked Bolna; the transfer never happened
+    again = run(brain.respond("किसी इंसान से बात कर सकते हैं"))
+    assert again.speech == brain._phrase("handoff_now") and session.transfer_requested and llm.requests == []
+    assert len(rows(env.engine, tickets)) == 1

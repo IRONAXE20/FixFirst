@@ -74,6 +74,7 @@ class CallSession:
     misunderstood: int = 0             # turns the agent couldn't understand; 2 -> a person
     handed_off: bool = False
     transfer_requested: bool = False   # the bridge asks Bolna to transfer the call to the care number
+    transfers_asked: int = 0           # times the bridge asked Bolna for the transfer
     transfer_result: str | None = None  # Bolna's report: "connected" or "failed: busy" (no-answer, ...)
     outcome: str = "in_progress"
     resolution: str | None = None

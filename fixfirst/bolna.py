@@ -175,11 +175,17 @@ class BolnaBridge:
                 # piece wasn't an answer to it: undo the turn and answer the whole sentence instead.
                 session = brain.s
                 before = call.checkpoint
-                if (session.hazard and not before["hazard"]) or (session.end_requested and not before["end_requested"]):
-                    # A safety alert or goodbye can't be undone: say it again so it's actually heard.
+                # Live calls 31 Oct: "मैं किसी इंसान से बात कर सकता हूँ।" … "सकता हूं।" — the tail cut off
+                # "connect कर रही हूँ" and Bolna dropped the transfer that came with it.
+                transferring = session.transfers_asked > before["transfers_asked"]
+                if ((session.hazard and not before["hazard"]) or (session.end_requested and not before["end_requested"])
+                        or transferring):
+                    # A safety alert, goodbye or transfer can't be undone: say it again so it's actually heard
+                    # (and ask Bolna for the transfer again).
                     session.say("user", words)
                     session.messages.append({"role": "user", "content": words})
                     session.publish("interrupted", repeated=True)
+                    session.transfer_requested = session.transfer_requested or transferring
                     return call.last_speech
                 if _side_effects(before, session):
                     # A ticket can't be undone either, but its long message isn't read again (live call 30 Oct:
@@ -234,6 +240,7 @@ class BolnaBridge:
         session = self._session_of(messages)
         if session and session.transfer_requested:
             session.transfer_requested = False
+            session.transfers_asked += 1
             session.publish("transfer")
             return True
         return False

@@ -486,3 +486,26 @@ def test_a_failed_transfer_is_on_the_call_and_the_ticket(phone):
     assert phone.get("/api/calls").json()[0]["transfer_result"] == "failed: busy"
     [ticket] = phone.get("/api/tickets").json()
     assert "Transfer to customer care failed (busy): call the customer back." in ticket["summary"]["notes"]
+
+
+def test_a_transfer_the_caller_talked_over_is_asked_for_again(phone, monkeypatch):
+    # Live calls 31 Oct: "मैं किसी इंसान से बात कर सकता हूँ।" then "सकता हूं।" cut off "connect कर रही हूँ";
+    # Bolna dropped the transfer, and the next reply was "समझ नहीं पाई".
+    from fixfirst.config import Tenant
+    monkeypatch.setattr(Tenant, "in_human_hours", lambda self, at=None: True)
+    tools = [{"type": "function", "function": {"name": "transfer_call_care", "parameters": {}}}]
+    head = [{"role": "system", "content": SYSTEM}, {"role": "assistant", "content": "नमस्ते! बताइए, क्या problem है?"},
+            {"role": "user", "content": "मैं किसी इंसान से बात कर सकता हूँ।"}]
+
+    def post(msgs):
+        r = phone.post("/bolna/v1/chat/completions", headers=AUTH,
+                       json={"model": "fixfirst", "messages": msgs, "stream": True, "tools": tools})
+        chunks = [json.loads(line[6:]) for line in r.text.splitlines() if line.startswith("data: {")]
+        return _spoken(r), [tc["function"]["name"] for c in chunks for tc in c["choices"][0]["delta"].get("tool_calls", [])]
+
+    first, tools_called = post(head)
+    assert "connect कर रही हूँ" in first and tools_called == ["transfer_call_care"]
+    # Bolna's next request: our reply isn't in it (never heard), and the caller's tail is a new piece.
+    again, tools_called = post(head + [{"role": "user", "content": "सकता हूं।"}])
+    assert again == first and tools_called == ["transfer_call_care"]
+    [t] = phone.get("/api/tickets").json()   # one handoff ticket, not two
