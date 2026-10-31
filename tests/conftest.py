@@ -27,7 +27,8 @@ def env(tmp_path):
     engine = create_engine(url)
     metadata.create_all(engine)
     seed_demo(engine)
-    settings = Settings(database_url=url, whatsapp_mode="dry_run", public_base_url="http://test")
+    settings = Settings(database_url=url, whatsapp_mode="dry_run", public_base_url="http://test",
+                        identity_check=True)   # the call-script tests cover steps 2-4; they're off on the live line
     tenant = Tenant.load()
     tickets = TicketService(engine, WhatsApp(settings, engine), tenant, settings)
     store = SessionStore(engine, tenant)

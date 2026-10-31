@@ -639,3 +639,16 @@ def test_after_hours_handoff_then_a_tv_and_an_unlisted_ac_issue_all_go_on_one_ti
     assert last.startswith(brain._phrase("handoff_later_added", when="कल").split("।")[0]) or "जोड़ दिया" in last
     [t] = rows(env.engine, tickets)
     assert {i.get("appliance") for i in t["summary"]["items"]} >= {"tv", "ac"}
+
+
+def test_without_the_identity_steps_an_unknown_number_goes_straight_to_the_problem(env):
+    # 31 Oct: the OTP was turned off; an unknown number gets the agent for an unknown caller.
+    from fixfirst.config import Settings
+    assert Settings().identity_check is False
+    env.settings.identity_check = False
+    brain, session, llm = env.make([
+        LLMResult(tool_calls=[call("start_troubleshooting", appliance="ac", symptom="unknown", language="hi")]),
+    ], customer=None, channel="phone", phone="+91 98111 22233")
+    speech = run(brain.respond("मेरे एसी में प्रॉब्लम आ रही है")).speech
+    assert speech != brain._phrase("unregistered") and len(llm.requests) == 1 and session.appliance == "ac"
+    assert not any(m["kind"] == "T10a_otp_verify" for m in rows(env.engine, outbox))

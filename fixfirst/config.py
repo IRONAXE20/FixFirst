@@ -71,8 +71,9 @@ class Settings:
     # test calls: no messages to real customers, no OTP.
     test_callers: dict = field(default_factory=dict)
     # Call script steps 2-4 on phone calls: confirm the caller's name and area, link an unregistered number by
-    # OTP, confirm the product. On by default.
-    identity_check: bool = True
+    # OTP, confirm the product. Off (31 Oct): a known number is greeted as that customer, any other number gets
+    # the agent for an unknown caller, with no OTP. IDENTITY_CHECK=true turns the steps back on.
+    identity_check: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -114,7 +115,7 @@ class Settings:
             photo_retention_days=int(_env("PHOTO_RETENTION_DAYS", "7")),
             whatsapp_templates=_env("WHATSAPP_TEMPLATES", "v1").lower(),
             test_callers=_pairs(_env("TEST_CALLERS")),
-            identity_check=_env("IDENTITY_CHECK", "true").lower() not in ("0", "false", "no", "off"),
+            identity_check=_env("IDENTITY_CHECK", "false").lower() in ("1", "true", "yes", "on"),
         )
 
     @property
