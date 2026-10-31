@@ -20,8 +20,10 @@ urgent_callback_minutes: 60
 
 # Customer care number in the WhatsApp templates (T1, T4, T5, T7): care_number = lookup(customer.city or
 # service area). One number for every city for now; add a row per city if the numbers split.
+# Temporarily (31 Oct) a test number; RentBasket's care number is +91 9958187021: put it back here and run the
+# Bolna transfer update (bolna_admin) when testing is done.
 care_numbers:
-  default: "+91 9958187021"
+  default: "+91 9654117078"
 
 # Live handoff to a person: 9am to 8pm IST. Outside these hours the agent raises the ticket and promises a
 # callback after 9am.

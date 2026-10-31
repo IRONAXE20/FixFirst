@@ -236,7 +236,7 @@ def test_ecosystem_templates_send_t1_with_the_customer_link_button(env):
     ], customer="C2", language="en")
     run(brain.respond("my fridge isn't cooling"))
     t1 = next(m for m in rows(env.engine, outbox) if m["kind"] == "T1_technician_booked")
-    assert "Welcome to Rentbasket" in t1["body"] and "+91 9958187021" in t1["body"] and "/u/" in t1["body"]
+    assert "Welcome to Rentbasket" in t1["body"] and env.tenant.care_number() in t1["body"] and "/u/" in t1["body"]
 
 
 def test_a_yes_in_devanagari_moves_on_to_the_number(env, monkeypatch):
