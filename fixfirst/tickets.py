@@ -679,7 +679,7 @@ class TicketService:
             error_code=session.error_code, path=session.run.path if session.run else [],
             transcript=session.transcript, latency=session.latency,
             ticket_code=(session.ticket or session.selffix_ticket or {}).get("code"), consent_notice="given",
-            guard_flags=session.guard_flags)
+            guard_flags=session.guard_flags, transfer_result=session.transfer_result)
         try:
             with self.engine.begin() as c:
                 exists = c.execute(select(calls.c.id).where(calls.c.id == session.id)).first()

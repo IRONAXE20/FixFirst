@@ -465,3 +465,24 @@ def test_bolna_merging_the_callers_first_pieces_stays_one_call(phone):
     assert session.ticket
     phone.post(hook, json={"id": "exec-77", "status": "completed"})
     assert [m for m in phone.get("/api/outbox").json() if m["audience"] == "customer"]   # held WhatsApp went out
+
+
+def test_transfer_result_reads_bolnas_transfer_report():
+    from fixfirst.bolna import transfer_result
+    # Live call 31 Oct: "transfer-completed", but the care number was busy and nobody picked up.
+    busy = {"status": "transfer-completed", "duration": "0", "hangup_by": "Carrier",
+            "hangup_reason": "Call recipient was busy", "termination_reason": "busy"}
+    assert transfer_result({"transfer_call_data": busy}) == "failed: busy"
+    assert transfer_result({"transfer_call_data": {"status": "transfer-completed", "duration": "42"}}) == "connected"
+    assert transfer_result({"transfer_call_data": {"status": "transfer-initiated", "duration": "0"}}) is None
+    assert transfer_result({"transfer_call_data": None}) is None and transfer_result({}) is None
+
+
+def test_a_failed_transfer_is_on_the_call_and_the_ticket(phone):
+    phone.post("/bolna/v1/chat/completions", json=_body("gas ki smell aa rahi hai kitchen mein"), headers=AUTH)
+    hook = f"/bolna/webhook/{webhook_token('ff_test')}"
+    phone.post(hook, json={"id": "exec-1", "status": "completed", "transfer_call_data": {
+        "status": "transfer-completed", "duration": "0", "termination_reason": "busy"}})
+    assert phone.get("/api/calls").json()[0]["transfer_result"] == "failed: busy"
+    [ticket] = phone.get("/api/tickets").json()
+    assert "Transfer to customer care failed (busy): call the customer back." in ticket["summary"]["notes"]

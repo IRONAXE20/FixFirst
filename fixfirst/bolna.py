@@ -363,6 +363,15 @@ class BolnaBridge:
         if recording and not getattr(session, "recording_url", None):
             session.recording_url = recording
             session.publish("recording", url=recording)
+        transfer = transfer_result(payload)
+        if transfer and transfer != session.transfer_result:
+            # Live call 31 Oct: the care number was busy, the caller heard nothing more and hung up.
+            session.transfer_result = transfer
+            session.publish("transfer_result", result=transfer)
+            logger.info(f"[{session.id}] transfer to customer care: {transfer}")
+            if transfer != "connected" and session.ticket:
+                self.brain_for(session).tickets.add_note(
+                    session.ticket, f"Transfer to customer care failed ({transfer.split(': ', 1)[-1]}): call the customer back.")
         if status in FINAL_STATUSES:
             brain = self.brain_for(session)
             await brain.on_hangup()
@@ -383,6 +392,23 @@ class BolnaBridge:
                 self.calls.pop(key, None)
                 ended += 1
         return ended
+
+
+def transfer_result(payload: dict) -> str | None:
+    """How Bolna's transfer to customer care went: "connected", "failed: busy" (no-answer, ...), or None while
+    there's no transfer or it hasn't finished. Bolna says "transfer-completed" even when the care number was
+    busy, so the length of the transferred call decides."""
+    t = payload.get("transfer_call_data")
+    if not isinstance(t, dict) or not t:
+        return None
+    try:
+        seconds = float(t.get("duration") or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    if seconds > 0:
+        return "connected"
+    reason = t.get("termination_reason") or t.get("hangup_reason")
+    return f"failed: {reason}"[:40] if reason else None
 
 
 def sse_chunks(speech: str, model: str, end_tool: str | None = None):

@@ -117,7 +117,7 @@ function renderCalls() {
       const med = lat.length ? lat.sort((a, b) => a - b)[Math.floor(lat.length / 2)] : null;
       const open = state.open === c.id;
       return `<tr class="row" data-call="${esc(c.id)}"><td class="small">${timeAgo(c.started_at)}</td><td>${esc(c.customer_name || "Unknown caller")}</td>
-        <td><span class="badge neutral">${esc(c.channel)}</span></td><td>${outcomeBadge(c.outcome)}${c.hazard ? ` <span class="badge bad">${esc(c.hazard)}</span>` : ""}${guardBadges(c.guard_flags)}</td>
+        <td><span class="badge neutral">${esc(c.channel)}</span></td><td>${outcomeBadge(c.outcome)}${c.hazard ? ` <span class="badge bad">${esc(c.hazard)}</span>` : ""}${guardBadges(c.guard_flags)}${transferBadge(c.transfer_result)}</td>
         <td class="small">${esc(c.playbook_id || "–")}</td><td>${(c.transcript || []).filter((t) => t.role === "user").length}</td>
         <td>${ms(med)}</td><td>${c.ticket_code ? `<a href="#ticket-${esc(c.ticket_code)}" data-goto-ticket="${esc(c.ticket_code)}">${esc(c.ticket_code)}</a>` : "–"}</td></tr>
         ${open ? `<tr class="detail-row"><td colspan="8">${callDetail(c)}</td></tr>` : ""}`;
@@ -131,6 +131,13 @@ function guardBadges(flags) {
   const n = {};
   for (const f of flags || []) n[f.kind] = (n[f.kind] || 0) + 1;
   return Object.entries(n).map(([k, v]) => ` <span class="badge ${k === "off_topic" ? "warn" : "bad"}" title="Guardrail">${esc(GUARD_LABEL[k] || k)}${v > 1 ? ` ×${v}` : ""}</span>`).join("");
+}
+
+// Handoff to customer care: did the person pick up?
+function transferBadge(r) {
+  if (!r) return "";
+  return r === "connected" ? ` <span class="badge info">Transferred</span>`
+    : ` <span class="badge bad" title="Call the customer back">Transfer ${esc(r)}</span>`;
 }
 
 function callDetail(c) {

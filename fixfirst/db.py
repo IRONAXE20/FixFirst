@@ -57,6 +57,7 @@ calls = Table(
     Column("ticket_code", String(16)),
     Column("consent_notice", String(8)),
     Column("guard_flags", JSON, default=list),         # guardrail hits (injection, staff claim, abuse...)
+    Column("transfer_result", String(40)),             # handoff to customer care: connected | failed: <reason>
 )
 
 tickets = Table(
@@ -175,7 +176,7 @@ def get_engine(url: str | None = None) -> Engine:
 # Columns added after the first deploy: create_all() makes missing tables but never alters existing ones.
 _ADDED = {
     "customers": [("link_token", "VARCHAR(40)")],
-    "calls": [("guard_flags", "JSON")],
+    "calls": [("guard_flags", "JSON"), ("transfer_result", "VARCHAR(40)")],
     "tickets": [("issue_id", "VARCHAR(16)"), ("origin_channel", "VARCHAR(12)"), ("channels_used", "VARCHAR(16)"),
                 ("audit_required", "BOOLEAN DEFAULT FALSE"), ("high_alert", "BOOLEAN DEFAULT FALSE")],
 }
