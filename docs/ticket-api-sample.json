@@ -1,0 +1,104 @@
+{
+  "schema": "fixfirst.ticket.v1",
+  "ticket_id": "FF-1035",
+  "status": "PARTIALLY_RESOLVED",
+  "priority": "normal",
+  "category": "technician",
+  "high_alert": false,
+  "audit_required": false,
+  "created_at": "2026-10-31T13:05:48.953755Z",
+  "updated_at": "2026-10-31T13:57:24.333200Z",
+  "sla_hours": 24,
+  "visit_agree_by": "2026-11-01T13:05:48.953755Z",
+  "origin_channel": "voice",
+  "channels_used": "both",
+  "language": "hi",
+  "customer": {
+    "id": "RB9876543210",
+    "name": "Ananya Sharma",
+    "phone": "+91 98765 43210",
+    "area": "Sector 52, Gurgaon",
+    "address": "Flat 1203, Tower B, Sector 52, Gurgaon"
+  },
+  "rental_id": null,
+  "problem": "AC problem (RentBasket KB AC-01 to AC-04)",
+  "likely_cause": "AC-04 Weak airflow, filter blocked fixed by the customer on the call",
+  "technician_note": null,
+  "error_code": null,
+  "hazard": null,
+  "caller_said": null,
+  "appliances": [
+    {
+      "appliance": "ac",
+      "appliance_label": "AC",
+      "brand": null,
+      "rental_id": null,
+      "kb_issue": "AC-04",
+      "result": "self_fixed",
+      "likely_cause": "AC-04 Weak airflow, filter blocked fixed by the customer on the call",
+      "technician_note": null,
+      "error_code": null,
+      "steps_tried": [
+        {
+          "step": "triage",
+          "answer": "AC-04 Weak airflow, filter blocked (hawa kam aa rahi hai, low air, filter jaam, dust)"
+        },
+        {
+          "step": "ac04_near",
+          "answer": "Yes, near the AC now"
+        },
+        {
+          "step": "ac04_off",
+          "answer": "AC is off at the remote and the wall"
+        },
+        {
+          "step": "ac04_filters",
+          "answer": "Filters are out (or already out and being washed)"
+        },
+        {
+          "step": "ac04_wash",
+          "answer": "Washed (and dried), or the caller says done / हो गया / kar liya"
+        },
+        {
+          "step": "ac04_refit",
+          "answer": "Yes, the airflow is fine now"
+        }
+      ],
+      "added_at": "2026-10-31T13:05:48.886256Z"
+    },
+    {
+      "appliance": "fridge",
+      "appliance_label": "fridge",
+      "brand": null,
+      "rental_id": null,
+      "kb_issue": null,
+      "result": "booked",
+      "likely_cause": "Human handoff: Caller asked for a person",
+      "technician_note": "Call the customer back about this",
+      "error_code": null,
+      "steps_tried": [
+        {
+          "step": "triage",
+          "answer": "FR-01 Not cooling (not cooling, thanda nahi kar raha, food getting spoiled)"
+        }
+      ],
+      "added_at": "2026-10-31T13:06:35.177885Z"
+    }
+  ],
+  "notes": [],
+  "customer_notes": [],
+  "reopened": [],
+  "photos": [
+    "https://fixfirst-zgo0.onrender.com/media/FF-1035/example-photo.jpg"
+  ],
+  "photo_upload_link": "https://fixfirst-zgo0.onrender.com/u/AbC123exampleToken",
+  "call": {
+    "call_id": "ae1a64f801d5",
+    "recording_url": "https://api.bolna.ai/recordings/call/00000000-0000-0000-0000-000000000000",
+    "ops_url": "https://fixfirst-zgo0.onrender.com/ops#call-ae1a64f801d5"
+  },
+  "playbook": {
+    "id": "ac_not_cooling",
+    "status": "draft-unreviewed"
+  }
+}

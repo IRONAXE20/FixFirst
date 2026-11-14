@@ -8,7 +8,7 @@ import asyncio
 import json
 import re
 import secrets
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from loguru import logger
 from sqlalchemy import insert, or_, select, update
@@ -396,6 +396,61 @@ class TicketService:
 
     def photo_url(self, token: str) -> str:
         return f"{self.settings.public_base_url}/u/{token}"
+
+    def export(self, t: dict) -> dict:
+        """The ticket as RentBasket's own systems read it (/api/v1/tickets): every field /ops shows, built from
+        the live row so a second appliance, photos or a status change are always included. Schema
+        fixfirst.ticket.v1: fields are only ever added, never renamed or removed."""
+        s = t["summary"] or {}
+        base = self.settings.public_base_url
+        when = lambda d: d.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z") if d else None
+        stamp = lambda v: f"{v}Z" if v and not v.endswith(("Z", "+00:00")) else v   # stored as naive UTC text
+        recording = next((n.split(": ", 1)[1] for n in s.get("notes") or [] if n.startswith("Call recording: ")), None)
+        sla = s.get("sla_hours")
+        items = s.get("items") or [{k: s.get(k) for k in ("appliance", "appliance_label", "brand", "likely_cause",
+                                                          "technician_note", "steps_tried", "error_code")}]
+        return {
+            "schema": "fixfirst.ticket.v1",
+            "ticket_id": t["code"],
+            "status": t["status"],
+            "priority": t["priority"],
+            "category": t["category"],
+            "high_alert": bool(t.get("high_alert")),
+            "audit_required": bool(t.get("audit_required")),
+            "created_at": when(t["created_at"]),
+            "updated_at": when(t["updated_at"]),
+            "sla_hours": sla,
+            "visit_agree_by": when(t["created_at"] + timedelta(hours=sla)) if sla else None,
+            "origin_channel": t.get("origin_channel") or "voice",
+            "channels_used": t.get("channels_used") or "voice_only",
+            "language": s.get("language"),
+            "customer": {"id": t.get("customer_id"), **{k: (s.get("customer") or {}).get(k)
+                                                         for k in ("name", "phone", "area", "address")}},
+            "rental_id": t.get("rental_id"),
+            "problem": s.get("problem"),
+            "likely_cause": s.get("likely_cause"),
+            "technician_note": s.get("technician_note"),
+            "error_code": s.get("error_code"),
+            "hazard": s.get("hazard"),
+            "caller_said": s.get("reason"),
+            "appliances": [{
+                "appliance": i.get("appliance"), "appliance_label": i.get("appliance_label"), "brand": i.get("brand"),
+                "rental_id": i.get("rental_id"), "kb_issue": i.get("issue_id"),
+                "result": i.get("result"),   # RESULT_LABEL: booked | urgent | partial | self_fix_in_progress | self_fixed
+                "likely_cause": i.get("likely_cause"), "technician_note": i.get("technician_note"),
+                "error_code": i.get("error_code"),
+                "steps_tried": [{"step": x.get("node"), "answer": x.get("answer")} for x in i.get("steps_tried") or []],
+                "added_at": stamp(i.get("at")),
+            } for i in items],
+            "notes": [n for n in s.get("notes") or [] if not n.startswith("Call recording: ")],
+            "customer_notes": [n.get("note") for n in s.get("customer_notes") or []],
+            "reopened": [{"at": stamp(r.get("at")), "likely_cause": r.get("likely_cause")} for r in s.get("reopened") or []],
+            "photos": [f"{base}/media/{p}" for p in t.get("photos") or []],
+            "photo_upload_link": self.photo_url(self.customer_token(t.get("customer_id")) or t["photo_token"]),
+            "call": {"call_id": t.get("call_id"), "recording_url": recording,
+                     "ops_url": self.call_url(t["call_id"]) if t.get("call_id") else None},
+            "playbook": {"id": s.get("playbook"), "status": s.get("playbook_status")},
+        }
 
     def call_url(self, session_id: str) -> str:
         return f"{self.settings.public_base_url}/ops#call-{session_id}"

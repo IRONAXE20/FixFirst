@@ -62,6 +62,7 @@ class Settings:
     bolna_agent_id: str = ""
     fixfirst_llm_key: str = ""            # the key Bolna sends when it calls our brain as its custom LLM
     admin_key: str = ""                   # needed to edit playbooks on /knowledge (editing is off without it)
+    tickets_api_key: str = ""             # RentBasket's systems read tickets from /api/v1/tickets with it (off without)
     photo_retention_days: int = 7         # photos are deleted this many days after their ticket is closed
     # "v1": the two approved templates (fixfirst_customer_update / fixfirst_team_ticket). "ecosystem": RentBasket's
     # T1 technician_booked, T2 selffix_steps_<issue>, T4 urgent_safety, T9 followup_check, T10a otp_verify
@@ -112,6 +113,7 @@ class Settings:
             bolna_agent_id=_env("BOLNA_AGENT_ID"),
             fixfirst_llm_key=_env("FIXFIRST_LLM_KEY"),
             admin_key=_env("ADMIN_KEY"),
+            tickets_api_key=_env("TICKETS_API_KEY"),
             photo_retention_days=int(_env("PHOTO_RETENTION_DAYS", "7")),
             whatsapp_templates=_env("WHATSAPP_TEMPLATES", "v1").lower(),
             test_callers=_pairs(_env("TEST_CALLERS")),

@@ -212,3 +212,30 @@ def test_customer_link_works_through_the_broken_template_button(client):
     with get_engine(client.db_url).connect() as c:
         token = c.execute(select(customers.c.link_token).where(customers.c.id == "C1")).scalar()
     assert client.get(f"/api/upload/%7B%7B1%7D%7D{token}").json()["name"] == "Ananya Sharma"
+
+
+def test_rentbasket_reads_tickets_as_json_with_its_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "UPLOADS", tmp_path / "uploads")
+    settings = Settings(database_url=f"sqlite:///{(tmp_path / 'x.db').as_posix()}", whatsapp_mode="dry_run",
+                        public_base_url="http://test", sarvam_api_key="", tickets_api_key="k-test")
+    scripts = {"responses": [LLMResult(tool_calls=[call("escalate_to_technician", reason="Fridge not cooling",
+                                                        caller_requested=True, language="en")])]}
+    app = server.create_app(settings, llm_factory=lambda: ScriptedLLM(scripts["responses"]))
+    with TestClient(app) as c:
+        sid = c.post("/api/sessions", json={"customer_id": "C2", "mode": "text", "language": "en"}).json()["session_id"]
+        code = c.post(f"/api/sessions/{sid}/text", json={"text": "Just send a technician please"}).json()["session"]["ticket"]["code"]
+        assert c.get(f"/api/v1/tickets/{code}").status_code == 401
+        assert c.get(f"/api/v1/tickets/{code}", headers={"X-API-Key": "wrong"}).status_code == 401
+        key = {"X-API-Key": "k-test"}
+        t = c.get(f"/api/v1/tickets/{code}", headers=key).json()
+        assert t["schema"] == "fixfirst.ticket.v1" and t["ticket_id"] == code and t["status"] == "TICKET_RAISED"
+        assert t["customer"]["name"].startswith("Rahul") and t["created_at"].endswith("Z")
+        assert t["appliances"] and t["photo_upload_link"].startswith("http://test/u/") and t["call"]["call_id"] == sid
+        listed = c.get("/api/v1/tickets", headers=key).json()
+        assert listed["count"] == 1 and listed["tickets"][0]["ticket_id"] == code
+        later = c.get("/api/v1/tickets", headers=key, params={"updated_since": listed["next_updated_since"]}).json()
+        assert later["count"] == 0
+        assert c.get("/api/v1/tickets/FF-9999", headers=key).status_code == 404
+    settings.tickets_api_key = ""
+    with TestClient(server.create_app(settings, llm_factory=lambda: ScriptedLLM([]))) as c:
+        assert c.get("/api/v1/tickets", headers={"X-API-Key": ""}).status_code == 503   # off without a key

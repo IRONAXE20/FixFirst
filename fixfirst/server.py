@@ -6,6 +6,7 @@ import importlib.util
 import statistics
 import uuid
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -409,6 +410,42 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
             t["photo_url"] = ticket_service.photo_url(ticket_service.customer_token(t["customer_id"]) or t["photo_token"])
             t["photos"] = [f"/media/{p}" for p in t["photos"] or []]
         return out
+
+    # ---- RentBasket's systems: tickets as JSON (fixfirst.ticket.v1), with the X-API-Key header ----------------
+    def check_tickets_key(request: Request) -> None:
+        if not settings.tickets_api_key:
+            raise HTTPException(503, "The tickets API is switched off: set TICKETS_API_KEY on the server")
+        if not hmac.compare_digest(request.headers.get("x-api-key", ""), settings.tickets_api_key):
+            raise HTTPException(401, "Wrong or missing X-API-Key")
+
+    @app.get("/api/v1/tickets")
+    async def export_tickets(request: Request, updated_since: str | None = None, status: str | None = None,
+                             limit: int = 100):
+        """Tickets created or changed after `updated_since` (ISO time), oldest first, so a poller can pass the
+        last ticket's updated_at back as the next updated_since."""
+        check_tickets_key(request)
+        q = select(tickets).order_by(tickets.c.updated_at, tickets.c.id).limit(max(1, min(limit, 500)))
+        if updated_since:
+            try:
+                since = datetime.fromisoformat(updated_since.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(400, "updated_since must be an ISO time, like 2026-11-14T09:30:00Z") from None
+            q = q.where(tickets.c.updated_at > (since.astimezone(timezone.utc).replace(tzinfo=None)
+                                                if since.tzinfo else since))
+        if status:
+            q = q.where(tickets.c.status == status.upper())
+        with engine.connect() as c:
+            out = [ticket_service.export(row(r)) for r in c.execute(q)]
+        return {"tickets": out, "count": len(out), "next_updated_since": out[-1]["updated_at"] if out else updated_since}
+
+    @app.get("/api/v1/tickets/{code}")
+    async def export_ticket(code: str, request: Request):
+        check_tickets_key(request)
+        with engine.connect() as c:
+            t = row(c.execute(select(tickets).where(tickets.c.code == code.upper())).first())
+        if not t:
+            raise HTTPException(404, "Unknown ticket")
+        return ticket_service.export(t)
 
     @app.patch("/api/tickets/{code}")
     async def patch_ticket(code: str, body: TicketPatch):
