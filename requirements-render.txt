@@ -1,5 +1,6 @@
-# The hosted server (Render): phone calls come through Bolna, so the Pipecat voice stack is left out.
-# Local development (browser voice) uses requirements.txt.
+# The hosted server (Render): phone calls through Bolna, or our own voice pipeline on a Plivo or Exotel number.
+# No WebRTC (Render doesn't accept UDP); local development (browser voice) uses requirements.txt.
+pipecat-ai[sarvam,elevenlabs,cartesia,deepgram,silero,websocket,runner]==1.12.0
 openai>=1.70
 anthropic>=2.0
 fastapi>=0.115

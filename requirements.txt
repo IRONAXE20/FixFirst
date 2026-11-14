@@ -1,4 +1,4 @@
-pipecat-ai[sarvam,webrtc,silero,websocket,runner]==1.12.0
+pipecat-ai[sarvam,elevenlabs,cartesia,deepgram,webrtc,silero,websocket,runner]==1.12.0
 openai>=1.70
 anthropic>=2.0
 fastapi>=0.115

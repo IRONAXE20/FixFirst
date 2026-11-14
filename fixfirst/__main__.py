@@ -5,6 +5,7 @@
   python -m fixfirst check            validate playbooks, safety lexicon and config
   python -m fixfirst bolna-setup --public-url https://...   put FixFirst on the phone through Bolna
   python -m fixfirst bolna-call +9198xxxxxxxx               have the Bolna agent call a number
+  python -m fixfirst plivo-setup --public-url https://... --number 91XXXXXXXXXX   our own phone line on Plivo
 """
 import argparse
 import asyncio
@@ -29,6 +30,9 @@ def main() -> None:
     bc.add_argument("phone")
     bc.add_argument("--as", dest="as_customer", help="Look the caller up as this RentBasket customer's number "
                                                      "(testing only: customer WhatsApp messages are not sent)")
+    ps = sub.add_parser("plivo-setup", help="Send a Plivo number's calls to FixFirst's own voice pipeline")
+    ps.add_argument("--public-url", required=True, help="Public https URL of this server")
+    ps.add_argument("--number", help="The Plivo number to attach, e.g. 918035550000")
     pb = sub.add_parser("playbooks", help="Copy playbooks between the YAML files and the database")
     pb.add_argument("action", choices=["import", "export"],
                     help="import: store every YAML file as a new version; export: write the database copy to YAML")
@@ -63,8 +67,11 @@ def main() -> None:
         unreviewed = [p.id for p in lib.playbooks.values() if p.status != "reviewed"]
         if unreviewed:
             print(f"WARNING: not yet reviewed by a technician: {', '.join(unreviewed)}")
-        print(f"Brain: {s.brain_provider or 'MISSING (offline demo only)'} · Sarvam voice key: "
-              f"{'set' if s.sarvam_ready else 'missing'} · Bolna: {'set' if s.bolna_api_key else 'missing'} · "
+        from .speech import missing, pick
+        stt, tts = pick(s)
+        print(f"Brain: {s.brain_provider or 'MISSING (offline demo only)'} · Voice: "
+              f"{f'{stt} / {tts}' if stt and tts else missing(s)} · Plivo: {'set' if s.plivo_ready else 'missing'} · "
+              f"Bolna: {'set' if s.bolna_api_key else 'missing'} · "
               f"WhatsApp: {s.whatsapp_mode} · DB: {re.sub(r'//([^:/@]+):[^@]*@', r'//\1:***@', s.database_url)}")
     elif args.cmd == "bolna-setup":
         from .bolna_admin import setup
@@ -73,6 +80,16 @@ def main() -> None:
         agent_id = setup(get_settings(), get_tenant(), args.public_url, args.telephony)
         print(f"Bolna agent ready: {agent_id} (saved to .env as BOLNA_AGENT_ID). Test it from the Bolna dashboard "
               f"or with: python -m fixfirst bolna-call <your number>")
+    elif args.cmd == "plivo-setup":
+        from .config import get_settings
+        from .plivo import setup as plivo_setup
+
+        s = get_settings()
+        if not s.plivo_ready:
+            raise SystemExit("Set PLIVO_AUTH_ID and PLIVO_AUTH_TOKEN in .env (and on Render) first")
+        app_id = plivo_setup(s.plivo_auth_id, s.plivo_auth_token, args.public_url, args.number)
+        print(f"Plivo application ready: {app_id}" + (f", {args.number} attached" if args.number else
+              " (attach your number to it in the Plivo console, or rerun with --number)"))
     elif args.cmd == "bolna-call":
         from .bolna_admin import place_call
         from .config import get_settings

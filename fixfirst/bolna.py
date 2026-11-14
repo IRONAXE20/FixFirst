@@ -8,7 +8,6 @@ So the bridge also learns calls from Bolna's status webhooks, which arrive befor
 the execution id and the phone numbers: a new conversation adopts the most recent unclaimed execution.
 """
 import asyncio
-import copy
 import hashlib
 import hmac
 import json
@@ -20,6 +19,7 @@ from dataclasses import dataclass, field
 from loguru import logger
 
 from .rentbasket import mobile10
+from .turns import TurnKeeper, note_transfer
 
 IDLE_END_SECONDS = 20 * 60
 PENDING_SECONDS = 5 * 60   # how long a webhook-announced execution waits for its first conversation turn
@@ -97,34 +97,9 @@ class BolnaCall:
     first_words: str = ""
     users_seen: int = 0
     last_user: str = ""                 # the caller's latest message as Bolna last sent it
-    last_speech: str = ""
-    last_words: str = ""                # the caller's words behind last_speech
-    checkpoint: dict | None = None      # session state from before last_speech's turn
+    keeper: TurnKeeper | None = None    # the brain's turns, and our last reply (turns.py)
     last_active: float = field(default_factory=time.monotonic)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-
-
-def checkpoint(session) -> dict:
-    """A copy of the session's state, to undo a turn whose reply the caller never heard. The playbook, the
-    event log and the live-view subscribers are shared, not copied."""
-    memo = {id(session.events): session.events, id(session._subscribers): session._subscribers}
-    if session.run:
-        memo[id(session.run.playbook)] = session.run.playbook
-    return copy.deepcopy(session.__dict__, memo)
-
-
-def _ticket_changed(before: dict, session) -> bool:
-    """A new ticket, or a new line on the call's ticket (live call 31 Oct: the fridge joined the AC's ticket, the
-    turn was undone as if nothing happened, and its replay read the whole ticket message again)."""
-    lines = lambda t: (t or {}).get("summary", {}).get("items")
-    return bool(session.ticket) and (not before["ticket"] or lines(session.ticket) != lines(before["ticket"])
-                                     or len(session.earlier_tickets) != len(before["earlier_tickets"]))
-
-
-def _side_effects(before: dict, session) -> bool:
-    """Did the turn do something that can't be taken back (a ticket, a safety alert, an ending)?"""
-    return bool(_ticket_changed(before, session) or (session.hazard and not before["hazard"])
-                or (session.closed and not before["closed"]) or (session.end_requested and not before["end_requested"]))
 
 
 class BolnaBridge:
@@ -166,45 +141,14 @@ class BolnaBridge:
             new = [u for u in fresh if u]
             call.users_seen = len(users)
             call.last_user = users[-1] if users else ""
+            keeper = call.keeper
             if not new:
-                return call.last_speech   # a re-ask without new words (silence nudge or retry)
+                return keeper.last_speech   # a re-ask without new words (silence nudge or retry)
             words = " ".join(new)
-            if call.last_speech and call.checkpoint and (appended or not self._was_heard(convo, call.last_speech, len(fresh))):
-                # Callers pause mid-sentence ("नहीं यार।" … "हाँ, सब कुछ नहीं है।"); Bolna sends each piece as a
-                # turn and drops our reply when they keep talking. That reply's step was never heard, so its
-                # piece wasn't an answer to it: undo the turn and answer the whole sentence instead.
-                session = brain.s
-                before = call.checkpoint
-                # Live calls 31 Oct: "मैं किसी इंसान से बात कर सकता हूँ।" … "सकता हूं।" — the tail cut off
-                # "connect कर रही हूँ" and Bolna dropped the transfer that came with it.
-                transferring = session.transfers_asked > before["transfers_asked"]
-                if ((session.hazard and not before["hazard"]) or (session.end_requested and not before["end_requested"])
-                        or transferring):
-                    # A safety alert, goodbye or transfer can't be undone: say it again so it's actually heard
-                    # (and ask Bolna for the transfer again).
-                    session.say("user", words)
-                    session.messages.append({"role": "user", "content": words})
-                    session.publish("interrupted", repeated=True)
-                    session.transfer_requested = session.transfer_requested or transferring
-                    return call.last_speech
-                if _side_effects(before, session):
-                    # A ticket can't be undone either, but its long message isn't read again (live call 30 Oct:
-                    # the caller talked over it and heard all of it twice): answer the new words, with a
-                    # one-line reminder of the ticket.
-                    recap = brain.ticket_recap() if _ticket_changed(before, session) else ""
-                    session.publish("interrupted", recapped=bool(recap))
-                    call.checkpoint, call.last_words = checkpoint(session), words
-                    result = await brain.respond(words)
-                    call.last_speech = f"{recap} {result.speech}".strip()
-                    return call.last_speech
-                session.__dict__.update(call.checkpoint)
-                session.publish("interrupted", merged=call.last_words)
-                logger.info(f"[{session.id}] reply not heard; answering the caller's pieces together")
-                words = f"{call.last_words} {words}"
-            call.checkpoint, call.last_words = checkpoint(brain.s), words
-            result = await brain.respond(words)
-            call.last_speech = result.speech
-            return result.speech
+            # Callers pause mid-sentence ("नहीं यार।" … "हाँ, सब कुछ नहीं है।"); Bolna sends each piece as a turn
+            # and drops our reply when they keep talking: then that reply wasn't heard (turns.py decides).
+            heard = not appended and self._was_heard(convo, keeper.last_speech, len(fresh))
+            return await keeper.answer(words, heard=heard)
 
     def _find(self, key: str, convo: list[dict]) -> BolnaCall | None:
         """The call this conversation belongs to. Without a call_ref the key hashes the caller's first message,
@@ -300,7 +244,8 @@ class BolnaBridge:
         welcome = _text(convo[0].get("content")) if convo and convo[0].get("role") == "assistant" else ""
         brain.adopt_greeting(welcome) if welcome else brain.greeting()
         first = next((_text(m.get("content")) for m in convo if m.get("role") == "user"), "")
-        call = BolnaCall(session_id=session.id, key=key, execution_id=execution_id, first_words=first)
+        call = BolnaCall(session_id=session.id, key=key, execution_id=execution_id, first_words=first,
+                         keeper=TurnKeeper(brain))
         self.calls[key] = call
         if execution_id:
             self.by_execution[execution_id] = key
@@ -371,14 +316,8 @@ class BolnaBridge:
             session.recording_url = recording
             session.publish("recording", url=recording)
         transfer = transfer_result(payload)
-        if transfer and transfer != session.transfer_result:
-            # Live call 31 Oct: the care number was busy, the caller heard nothing more and hung up.
-            session.transfer_result = transfer
-            session.publish("transfer_result", result=transfer)
-            logger.info(f"[{session.id}] transfer to customer care: {transfer}")
-            if transfer != "connected" and session.ticket:
-                self.brain_for(session).tickets.add_note(
-                    session.ticket, f"Transfer to customer care failed ({transfer.split(': ', 1)[-1]}): call the customer back.")
+        if transfer:
+            note_transfer(session, transfer, self.brain_for(session).tickets)
         if status in FINAL_STATUSES:
             brain = self.brain_for(session)
             await brain.on_hangup()

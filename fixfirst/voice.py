@@ -1,12 +1,15 @@
-"""Real-time voice: Pipecat pipeline with Sarvam speech-to-text and text-to-speech around
-the FixFirst brain. The same `run_bot` serves the browser (WebRTC) and phone calls
-(Exotel websocket); only the transport differs."""
+"""Real-time voice: a Pipecat pipeline around the FixFirst brain, with speech-to-text and text-to-speech from
+whichever provider has a key (speech.py). The same `run_bot` serves the browser (WebRTC) and phone calls
+(Plivo, Exotel); only the transport differs. It does what Bolna did for us: turn-taking, the greeting, a reply
+the caller talked over (turns.py), hanging up after the goodbye and the transfer to customer care."""
 import asyncio
 import time
 
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import (BotStartedSpeakingFrame, ErrorFrame, InterimTranscriptionFrame, MetricsFrame,
+from pipecat.frames.frames import (BotStartedSpeakingFrame, BotStoppedSpeakingFrame, EndWorkerFrame, ErrorFrame,
+                                   Frame, InterimTranscriptionFrame, InterruptionFrame, LLMContextFrame,
+                                   LLMFullResponseEndFrame, LLMFullResponseStartFrame, LLMTextFrame, MetricsFrame,
                                    TTSSpeakFrame, UserStoppedSpeakingFrame)
 from pipecat.metrics.metrics import TTFBMetricsData
 from pipecat.observers.base_observer import BaseObserver, FramePushed
@@ -16,43 +19,89 @@ from pipecat.pipeline.task import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (LLMContextAggregatorPair,
                                                                     LLMUserAggregatorParams)
-from pipecat.services.sarvam.llm import SarvamLLMService
-from pipecat.services.sarvam.stt import SarvamSTTService
-from pipecat.services.sarvam.tts import SarvamTTSService
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from .brain import Brain
 from .config import Settings, Tenant
+from .speech import make_stt, make_tts
+from .turns import TurnKeeper
 
-LANG_CODES = {"hi": "hi-IN", "en": "en-IN"}
+IDLE_SECONDS = 300   # a caller cleaning a filter may go quiet for minutes; after this the call ends
 
 
-class FixFirstLLMService(SarvamLLMService):
-    """Sits in Pipecat's LLM slot but hands each completed user turn to the FixFirst brain,
-    which runs its own safety screen, tool loop and scripted playbook steps."""
+class FixFirstProcessor(FrameProcessor):
+    """Sits where an LLM would in the pipeline and hands each completed caller turn to the FixFirst brain, which
+    runs its own safety screen, tool loop and scripted playbook steps. `telephony` (optional) can transfer the
+    call to a person: `await telephony.transfer()`."""
 
-    def __init__(self, brain: Brain, **kwargs):
+    def __init__(self, brain: Brain, telephony=None, **kwargs):
         super().__init__(**kwargs)
         self.brain = brain
+        self.telephony = telephony
+        self.keeper = TurnKeeper(brain)
+        self._lock = asyncio.Lock()
+        self._speaking = False        # our reply is queued or playing
+        self._heard = True            # the caller heard all of our last reply
+        self._transfer_pending = False
 
-    async def _process_context(self, context: LLMContext):
-        text = _latest_user_text(context)
-        if not text:
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, LLMContextFrame):
+            text = _latest_user_text(frame.context)
+            if text:
+                await self._answer(text)
             return
-        presented_before = set(self.brain.s.presented)
-        turn = asyncio.ensure_future(self.brain.respond(text))
-        try:
-            # Shielded so the brain's state stays consistent if the caller interrupts.
-            result = await asyncio.shield(turn)
-        except asyncio.CancelledError:
-            turn.add_done_callback(lambda _t: self._mark_unheard(presented_before))
-            raise
-        if result.speech:
-            await self._push_llm_text(result.speech)
+        if isinstance(frame, BotStoppedSpeakingFrame) and self._speaking:
+            self._speaking = False
+            await self._after_speech()
+        elif isinstance(frame, InterruptionFrame) and self._speaking:
+            # The caller talked over us: the next turn decides what to do with the unheard reply.
+            self._speaking, self._heard = False, False
+            await self._after_speech()
+        await self.push_frame(frame, direction)
 
-    def _mark_unheard(self, presented_before: set[str]) -> None:
-        """The caller talked over this turn, so its new step was not heard; it will be asked again."""
-        self.brain.s.presented = set(presented_before)
-        self.brain.s.publish("interrupted")
+    async def _answer(self, text: str) -> None:
+        heard, self._heard = self._heard, True
+        turn = asyncio.ensure_future(self._locked_answer(text, heard))
+        try:
+            # Shielded: if the caller interrupts while the brain is thinking, the turn still finishes (its state
+            # stays consistent) and the reply counts as unheard.
+            speech = await asyncio.shield(turn)
+        except asyncio.CancelledError:
+            self._heard = False
+            raise
+        s = self.brain.s
+        if speech:
+            self._speaking = True
+            await self.push_frame(LLMFullResponseStartFrame())
+            await self.push_frame(LLMTextFrame(speech))
+            await self.push_frame(LLMFullResponseEndFrame())
+        if s.end_requested:
+            # After the goodbye plays out, end the call (the phone serializer hangs up).
+            await self.push_frame(EndWorkerFrame(reason="goodbye"))
+        elif s.transfer_requested and self.telephony:
+            self._transfer_pending = True
+            if not speech:
+                await self._after_speech()
+
+    async def _locked_answer(self, text: str, heard: bool) -> str:
+        async with self._lock:
+            return await self.keeper.answer(text, heard=heard)
+
+    async def _after_speech(self) -> None:
+        """"Connect कर रही हूँ" has played (or the caller cut it off): move the call to customer care."""
+        if not self._transfer_pending:
+            return
+        s = self.brain.s
+        self._transfer_pending, s.transfer_requested = False, False
+        s.transfers_asked += 1
+        s.publish("transfer")
+        try:
+            await self.telephony.transfer()
+        except Exception as e:   # the call stays with us; the handoff ticket already asks for a callback
+            logger.error(f"[{s.id}] transfer failed: {e}")
+            from .turns import note_transfer
+            note_transfer(s, "failed: transfer error", self.brain.tickets)
 
 
 def _latest_user_text(context: LLMContext) -> str:
@@ -109,23 +158,11 @@ class CallObserver(BaseObserver):
             s.publish("latency", **(s.latency[-1] if s.latency else entry))
 
 
-async def run_bot(transport, brain: Brain, settings: Settings, tenant: Tenant, *,
+async def run_bot(transport, brain: Brain, settings: Settings, tenant: Tenant, *, telephony=None,
                   sample_rate_in: int | None = None, sample_rate_out: int | None = None) -> None:
-    lang = LANG_CODES.get(brain.s.language, "hi-IN")
-    stt = SarvamSTTService(
-        api_key=settings.sarvam_api_key,
-        settings=SarvamSTTService.Settings(model=settings.stt_model, language=lang),
-        mode=settings.stt_mode,
-    )
-    tts = SarvamTTSService(
-        api_key=settings.sarvam_api_key,
-        settings=SarvamTTSService.Settings(model=settings.tts_model, voice=tenant.tts_speaker, language=lang),
-    )
-    llm = FixFirstLLMService(
-        brain,
-        api_key=settings.sarvam_api_key,
-        settings=SarvamLLMService.Settings(model=settings.llm_model),
-    )
+    stt = make_stt(settings, brain.s.language)
+    tts = make_tts(settings, tenant, brain.s.language)
+    fixfirst = FixFirstProcessor(brain, telephony)
     context = LLMContext([])
     aggregators = LLMContextAggregatorPair(
         context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()))
@@ -134,7 +171,7 @@ async def run_bot(transport, brain: Brain, settings: Settings, tenant: Tenant, *
         transport.input(),
         stt,
         aggregators.user(),
-        llm,
+        fixfirst,
         tts,
         transport.output(),
         aggregators.assistant(),
@@ -144,9 +181,8 @@ async def run_bot(transport, brain: Brain, settings: Settings, tenant: Tenant, *
         params.audio_in_sample_rate = sample_rate_in
     if sample_rate_out:
         params.audio_out_sample_rate = sample_rate_out
-    # Callers may go quiet for minutes while cleaning a filter, so allow a long idle window.
     task = PipelineWorker(pipeline, params=params, observers=[CallObserver(brain)], enable_rtvi=False,
-                          idle_timeout_secs=900)
+                          idle_timeout_secs=IDLE_SECONDS)
 
     @transport.event_handler("on_client_connected")
     async def on_connected(_transport, _client):

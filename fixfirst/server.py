@@ -18,7 +18,7 @@ from sqlalchemy import desc, select, update
 
 from . import photos as photo_store
 from . import playbook_store
-from . import rentbasket
+from . import plivo, rentbasket, speech
 from .bolna import BolnaBridge, completion_body, end_call_tool, sse_chunks, transfer_call_tool, webhook_token
 from .brain import Brain
 from .config import DATA_DIR, WEB_DIR, Settings, get_settings, get_tenant, now_utc
@@ -27,16 +27,19 @@ from .demo_llm import KeywordLLM
 from .knowledge import DocLibrary
 from .llm import ChatModel, make_brain_llm
 from .playbooks import PlaybookError, get_library
+from .plivo import PlivoCalls, PlivoTelephony, url_token
 from .safety import get_screen
 from .seed import seed_demo
 from .session import CallSession, SessionStore
 from .tickets import OPEN as OPEN_STATES
 from .tickets import STATES as TICKET_STATES
 from .tickets import TicketService
+from .turns import note_transfer
 from .whatsapp import WhatsApp
 
 UPLOADS = DATA_DIR / "uploads"
 VOICE_INSTALLED = importlib.util.find_spec("pipecat") is not None
+WEBRTC_INSTALLED = VOICE_INSTALLED and importlib.util.find_spec("aiortc") is not None
 MAX_PHOTO_BYTES = 10 * 1024 * 1024
 
 
@@ -140,8 +143,13 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
         warm_task = asyncio.create_task(warm_up())
         if not settings.brain_provider:
             logger.warning("No ANTHROPIC_API_KEY or SARVAM_API_KEY: pages work and Type mode runs the offline demo brain.")
-        elif not settings.sarvam_ready:
-            logger.info(f"Brain: {settings.brain_provider}. Browser voice needs SARVAM_API_KEY; Bolna phone calls don't.")
+        elif not settings.voice_ready:
+            logger.info(f"Brain: {settings.brain_provider}. Our own voice line: {speech.missing(settings)}. "
+                        f"Bolna phone calls don't need it.")
+        else:
+            stt, tts = speech.pick(settings)
+            logger.info(f"Brain: {settings.brain_provider}. Voice: {stt} speech-to-text, {tts} text-to-speech; "
+                        f"phone line: {'Plivo' if settings.plivo_ready else 'Bolna'}.")
         yield
         loop_task.cancel()
         warm_task.cancel()
@@ -190,7 +198,9 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
         return {
             "tenant": {"name": tenant.name, "agent_name": tenant.agent_name, "service_area": tenant.service_area,
                        "support_phone": tenant.support_phone, "emergency_numbers": tenant.emergency_numbers},
-            "sarvam_ready": settings.sarvam_ready and VOICE_INSTALLED, "whatsapp_mode": "live" if ticket_service.whatsapp.live else "dry_run",
+            "sarvam_ready": settings.voice_ready and VOICE_INSTALLED,   # any voice provider (speech.py)
+            "voice": dict(zip(("stt", "tts"), speech.pick(settings)), phone="plivo" if settings.plivo_ready else "bolna"),
+            "whatsapp_mode": "live" if ticket_service.whatsapp.live else "dry_run",
             "models": {"llm": settings.llm_model, "stt": f"{settings.stt_model} ({settings.stt_mode})",
                        "tts": f"{settings.tts_model} / {tenant.tts_speaker}"},
             "doc_qa": settings.enable_doc_qa,
@@ -277,30 +287,140 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
         ticket_service.attach_session_photo(session, rel)
         return {"path": rel, "url": f"/media/{rel}"}
 
-    # ---- voice: browser (WebRTC) and Exotel, through Pipecat ------------------------------
-    # Pipecat is optional: the hosted server (requirements-render.txt) leaves it out, since phone
-    # calls go through Bolna and WebRTC needs UDP, which Render doesn't accept.
+    # ---- voice: our own pipeline (Pipecat), for the browser (WebRTC) and phone lines (Plivo, Exotel) -----
+    # Speech-to-text and text-to-speech come from whichever provider has a key (speech.py). WebRTC needs UDP,
+    # which Render doesn't accept, so the hosted server installs the phone parts only (requirements-render.txt).
+    plivo_calls = PlivoCalls()
+    app.state.plivo_calls = plivo_calls
+    plivo_token = url_token(settings.plivo_auth_token) if settings.plivo_ready else None
+
+    def start_bot(coro) -> None:
+        task = asyncio.create_task(coro)
+        bot_tasks.add(task)
+        task.add_done_callback(bot_tasks.discard)
+
+    async def phone_session(caller: str | None) -> CallSession:
+        """A phone call's session: the caller looked up in RentBasket, or a demo customer for TEST_CALLERS."""
+        test_as = settings.test_callers.get(rentbasket.mobile10(caller) or "")
+        session = store.create(channel="phone", customer_id=test_as or await sync_customer(caller), caller_phone=caller)
+        session.test_call = bool(test_as)
+        return session
+
+    def check_plivo(token: str) -> None:
+        if not plivo_token or not hmac.compare_digest(token, plivo_token):
+            raise HTTPException(404, "Not found")
+
+    @app.post("/plivo/answer/{token}")
+    async def plivo_answer(token: str, request: Request):
+        check_plivo(token)
+        form = dict(await request.form())
+        if not (VOICE_INSTALLED and settings.voice_ready):
+            logger.error(f"Plivo call rejected: {speech.missing(settings) or 'Pipecat is not installed'}")
+            return Response(plivo.reject_xml(), media_type="application/xml")
+        plivo_calls.answered(form.get("CallUUID", ""), form.get("From"), form.get("To"))
+        return Response(plivo.answer_xml(settings.public_base_url, token), media_type="application/xml")
+
+    @app.post("/plivo/transfer/{token}")
+    async def plivo_transfer(token: str, request: Request):
+        check_plivo(token)
+        form = dict(await request.form())
+        ours = (plivo_calls.pending.get(form.get("CallUUID", "")) or {}).get("to") or form.get("To")
+        return Response(plivo.transfer_xml(settings.public_base_url, token, tenant.care_number(), ours),
+                        media_type="application/xml")
+
+    def plivo_session(form: dict) -> CallSession | None:
+        for key in ("DialALegUUID", "CallUUID", "ALegUUID"):
+            sid = plivo_calls.sessions.get(form.get(key) or "")
+            if sid:
+                return store.get(sid)
+        return None
+
+    @app.post("/plivo/dial-status/{token}")
+    async def plivo_dial_status(token: str, request: Request):
+        check_plivo(token)
+        form = dict(await request.form())
+        session = plivo_session(form)
+        if session:
+            note_transfer(session, plivo.dial_result(form), ticket_service)
+            ticket_service.persist_call(session)
+        return {"ok": True}
+
+    @app.post("/plivo/recording/{token}")
+    async def plivo_recording(token: str, request: Request):
+        check_plivo(token)
+        form = dict(await request.form())
+        session, url = plivo_session(form), form.get("RecordUrl")
+        if session and url and not session.recording_url:
+            session.recording_url = url
+            session.publish("recording", url=url)
+            if session.ticket:
+                ticket_service.add_note(session.ticket, f"Call recording: {url}")
+        return {"ok": True}
+
     if VOICE_INSTALLED:
+        from .voice import run_bot
+
+        @app.websocket("/ws/plivo/{token}")
+        async def plivo_stream(ws: WebSocket, token: str):
+            from pipecat.runner.utils import parse_telephony_websocket
+            from pipecat.serializers.plivo import PlivoFrameSerializer
+            from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
+
+            if not plivo_token or not hmac.compare_digest(token, plivo_token):
+                await ws.close(code=1008)
+                return
+            await ws.accept()
+            _kind, call_data = await parse_telephony_websocket(ws)
+            call_uuid = call_data.get("call_id") or ""
+            info = plivo_calls.pending.get(call_uuid) or {}
+            session = await phone_session(info.get("from"))
+            plivo_calls.started(call_uuid, session.id)
+            serializer = PlivoFrameSerializer(stream_id=call_data["stream_id"], call_id=call_uuid,
+                                              auth_id=settings.plivo_auth_id, auth_token=settings.plivo_auth_token)
+            transport = FastAPIWebsocketTransport(websocket=ws, params=FastAPIWebsocketParams(
+                audio_in_enabled=True, audio_out_enabled=True, add_wav_header=False, serializer=serializer))
+            telephony = PlivoTelephony(settings.plivo_auth_id, settings.plivo_auth_token, call_uuid,
+                                       f"{settings.public_base_url}/plivo/transfer/{token}")
+            session.publish("plivo", call_uuid=call_uuid)
+            logger.info(f"Plivo call {call_uuid} -> session {session.id} "
+                        f"(customer {'found' if session.customer else 'unknown'})")
+            await run_bot(transport, brain_for(session), settings, tenant, telephony=telephony,
+                          sample_rate_in=8000, sample_rate_out=8000)
+
+        # Exotel Voicebot applet -> wss://<host>/ws/exotel (no transfer: Exotel's flow decides what follows)
+        @app.websocket("/ws/exotel")
+        async def exotel(ws: WebSocket):
+            from pipecat.runner.utils import parse_telephony_websocket
+            from pipecat.serializers.exotel import ExotelFrameSerializer
+            from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
+
+            await ws.accept()
+            if not settings.voice_ready:
+                logger.error(f"Exotel call rejected: {speech.missing(settings)}")
+                await ws.close()
+                return
+            _kind, call_data = await parse_telephony_websocket(ws)
+            session = await phone_session(call_data.get("from") or None)
+            serializer = ExotelFrameSerializer(stream_sid=call_data["stream_id"], call_sid=call_data.get("call_id"))
+            transport = FastAPIWebsocketTransport(websocket=ws, params=FastAPIWebsocketParams(
+                audio_in_enabled=True, audio_out_enabled=True, add_wav_header=False, serializer=serializer))
+            await run_bot(transport, brain_for(session), settings, tenant, sample_rate_in=8000, sample_rate_out=8000)
+
+    if WEBRTC_INSTALLED:
         from pipecat.transports.base_transport import TransportParams
         from pipecat.transports.smallwebrtc.request_handler import (IceCandidate, SmallWebRTCPatchRequest,
                                                                     SmallWebRTCRequest, SmallWebRTCRequestHandler)
         from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
-        from .voice import run_bot
-
         webrtc = SmallWebRTCRequestHandler()
-
-        def start_bot(coro) -> None:
-            task = asyncio.create_task(coro)
-            bot_tasks.add(task)
-            task.add_done_callback(bot_tasks.discard)
 
         @app.post("/api/offer")
         async def webrtc_offer(request: Request):
             body = await request.json()
             req = SmallWebRTCRequest.from_dict(body)
-            if not settings.sarvam_ready:
-                raise HTTPException(503, "Voice calls need SARVAM_API_KEY in .env. Use Type mode to try the offline demo.")
+            if not settings.voice_ready:
+                raise HTTPException(503, f"Voice calls need a speech key in .env ({speech.missing(settings)}). "
+                                         "Use Type mode to try the offline demo.")
             session = session_or_404((req.request_data or {}).get("session_id", ""))
             brain = brain_for(session)
 
@@ -320,27 +440,6 @@ def create_app(settings: Settings | None = None, llm_factory: Callable[[], ChatM
                                          sdp_mline_index=c.get("sdp_mline_index", c.get("sdpMLineIndex", 0)))
                             for c in body.get("candidates", [])]))
             return {"status": "ok"}
-
-        # ---- voice: phone (Exotel Voicebot applet -> wss://<host>/ws/exotel) -----------------
-        @app.websocket("/ws/exotel")
-        async def exotel(ws: WebSocket):
-            from pipecat.runner.utils import parse_telephony_websocket
-            from pipecat.serializers.exotel import ExotelFrameSerializer
-            from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
-
-            await ws.accept()
-            if not settings.sarvam_ready:
-                logger.error("Exotel call rejected: SARVAM_API_KEY is not set")
-                await ws.close()
-                return
-            _kind, call_data = await parse_telephony_websocket(ws)
-            caller = call_data.get("from") or None
-            session = store.create(channel="phone", customer_id=await sync_customer(caller), caller_phone=caller)
-            serializer = ExotelFrameSerializer(stream_sid=call_data["stream_id"], call_sid=call_data.get("call_id"))
-            transport = FastAPIWebsocketTransport(websocket=ws, params=FastAPIWebsocketParams(
-                audio_in_enabled=True, audio_out_enabled=True, add_wav_header=False, serializer=serializer))
-            await run_bot(transport, brain_for(session), settings, tenant, sample_rate_in=8000, sample_rate_out=8000)
-
 
     # ---- phone via Bolna (FixFirst as Bolna's custom LLM) -----------------------------------
     def check_llm_key(request: Request) -> None:

@@ -41,6 +41,19 @@ class Settings:
     stt_model: str = "saaras:v4"
     stt_mode: str = "codemix"
     tts_model: str = "bulbul:v3"
+    # Our own phone line (instead of Bolna): speech-to-text and text-to-speech from whichever of these keys is
+    # set (speech.py picks; STT_PROVIDER / TTS_PROVIDER override), and Plivo for the phone number.
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""         # a Hindi voice from ElevenLabs' Voice Library
+    elevenlabs_tts_model: str = "eleven_flash_v2_5"
+    cartesia_api_key: str = ""
+    cartesia_voice_id: str = ""           # a Hindi voice from Cartesia's library
+    cartesia_tts_model: str = "sonic-3"
+    deepgram_api_key: str = ""
+    stt_provider: str = "auto"            # auto | sarvam | elevenlabs | deepgram | cartesia
+    tts_provider: str = "auto"            # auto | sarvam | elevenlabs | cartesia
+    plivo_auth_id: str = ""
+    plivo_auth_token: str = ""
     llm_timeout: float = 8.0
     database_url: str = f"sqlite:///{(DATA_DIR / 'fixfirst.db').as_posix()}"
     whatsapp_mode: str = "dry_run"
@@ -94,6 +107,17 @@ class Settings:
             stt_model=_env("SARVAM_STT_MODEL", cls.stt_model),
             stt_mode=_env("SARVAM_STT_MODE", cls.stt_mode),
             tts_model=_env("SARVAM_TTS_MODEL", cls.tts_model),
+            elevenlabs_api_key=_env("ELEVENLABS_API_KEY"),
+            elevenlabs_voice_id=_env("ELEVENLABS_VOICE_ID"),
+            elevenlabs_tts_model=_env("ELEVENLABS_TTS_MODEL", cls.elevenlabs_tts_model),
+            cartesia_api_key=_env("CARTESIA_API_KEY"),
+            cartesia_voice_id=_env("CARTESIA_VOICE_ID"),
+            cartesia_tts_model=_env("CARTESIA_TTS_MODEL", cls.cartesia_tts_model),
+            deepgram_api_key=_env("DEEPGRAM_API_KEY"),
+            stt_provider=_env("STT_PROVIDER", "auto").lower(),
+            tts_provider=_env("TTS_PROVIDER", "auto").lower(),
+            plivo_auth_id=_env("PLIVO_AUTH_ID"),
+            plivo_auth_token=_env("PLIVO_AUTH_TOKEN"),
             llm_timeout=float(_env("LLM_TIMEOUT_SECONDS", "8")),
             database_url=db,
             whatsapp_mode=_env("WHATSAPP_MODE", "dry_run").lower(),
@@ -123,6 +147,17 @@ class Settings:
     @property
     def sarvam_ready(self) -> bool:
         return bool(self.sarvam_api_key) and not self.sarvam_api_key.startswith("bn-")
+
+    @property
+    def voice_ready(self) -> bool:
+        """Speech in and out are both available (speech.py), so FixFirst can run a call without Bolna."""
+        from .speech import pick
+        stt, tts = pick(self)
+        return bool(stt and tts)
+
+    @property
+    def plivo_ready(self) -> bool:
+        return bool(self.plivo_auth_id and self.plivo_auth_token)
 
     @property
     def brain_provider(self) -> str | None:

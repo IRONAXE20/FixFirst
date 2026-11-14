@@ -51,7 +51,7 @@ export async function initChrome(active) {
     if (chip) {
       const brainOk = cfg.brain && cfg.brain !== "offline_demo";
       chip.className = `chip ${brainOk ? "ok" : "warn"}`;
-      chip.innerHTML = `<span class="dot"></span>${brainOk ? `Brain: ${esc(cfg.brain_model)}` : "No model key"} · Voice ${cfg.sarvam_ready ? "on" : "off"} · WhatsApp ${cfg.whatsapp_mode === "live" ? "live" : "dry run"}`;
+      chip.innerHTML = `<span class="dot"></span>${brainOk ? `Brain: ${esc(cfg.brain_model)}` : "No model key"} · Voice ${cfg.sarvam_ready ? `on (${esc(cfg.voice?.stt || "")}${cfg.voice?.tts && cfg.voice.tts !== cfg.voice.stt ? " / " + esc(cfg.voice.tts) : ""}${cfg.voice?.phone === "plivo" ? ", Plivo" : ""})` : "off"} · WhatsApp ${cfg.whatsapp_mode === "live" ? "live" : "dry run"}`;
     }
     return cfg;
   } catch (e) {
