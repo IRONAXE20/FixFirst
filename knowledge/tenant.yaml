@@ -11,7 +11,7 @@ support_phone: "+91 99588 58473"
 
 # Who receives ticket summaries on WhatsApp (international format, no "+").
 # ASK: the service desk / technician group numbers. Empty = messages only go to the outbox.
-team_whatsapp: ["919654117078"]   # testing (30 Oct): replace with the service desk number(s)
+team_whatsapp: ["919958187021"]   # RentBasket customer care (14 Nov)
 # ASK: a named on-call owner for urgent safety tickets.
 on_call_name: "Service desk (set a named on-call owner)"
 # RentBasket ecosystem SLA (29 Oct 2026): URGENT = callback within 1 hour plus a same-day visit. The agent
@@ -20,10 +20,9 @@ urgent_callback_minutes: 60
 
 # Customer care number in the WhatsApp templates (T1, T4, T5, T7): care_number = lookup(customer.city or
 # service area). One number for every city for now; add a row per city if the numbers split.
-# Temporarily (31 Oct) a test number; RentBasket's care number is +91 9958187021: put it back here and run the
-# Bolna transfer update (bolna_admin) when testing is done.
+# Bolna's transfer tool holds its own copy of this number: change both together.
 care_numbers:
-  default: "+91 9654117078"
+  default: "+91 9958187021"
 
 # Live handoff to a person: 9am to 8pm IST. Outside these hours the agent raises the ticket and promises a
 # callback after 9am.
